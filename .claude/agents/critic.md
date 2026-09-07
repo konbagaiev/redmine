@@ -1,6 +1,6 @@
 ---
 name: critic
-description: Adversarial reviewer of ai-workflow/spec.md for the Redmine PAT task. Use after the planner produces or revises the spec, to find gaps, wrong assumptions about Redmine code, security holes, and scope problems before implementation. Read-only; returns a structured critique.
+description: Adversarial reviewer of the feature spec in ai-workflow/specs/ for the Redmine PAT task. Use after the planner produces or revises the spec, to find gaps, wrong assumptions about Redmine code, security holes, and scope problems before implementation. Read-only; returns a structured critique.
 tools: Read, Grep, Glob, Bash, WebFetch
 ---
 

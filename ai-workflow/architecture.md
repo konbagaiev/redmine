@@ -183,10 +183,91 @@ What this says about "extend OAuth" vs "standalone PAT":
   global config value, not per token; (d) Doorkeeper only reads `Bearer`/`access_token`,
   so backward-compatible transport (`X-Redmine-API-Key`, `?key=`, Basic) would need a
   custom `access_token_methods` or a pre-resolution step in `find_current_user` anyway;
-  (e) Doorkeeper's model classes are gem-owned; adding columns and custom lookups means
-  monkey-patching `Doorkeeper::AccessToken`, which core reviewers dislike as much as a
-  new model. A standalone model can still borrow the `oauth_scope` mechanism (1 line in
-  `find_current_user`) so scopes remain a later add-on without a rewrite (D-004).
+  (e) Doorkeeper's model classes are gem-owned. **Resolved (1.3.1, D-010):** no
+  monkey-patch is needed. Extra columns are added by a Redmine migration (the app owns
+  the schema of the Doorkeeper tables), validations live in a Redmine subclass
+  `PersonalAccessToken < Doorkeeper::AccessToken`, and Doorkeeper 5.8 itself documents
+  app-owned extra token columns via `custom_access_token_attributes` (`config.rb:354`).
+  Points (a)-(d) are addressed by self-issue from My account, the new columns, per-row
+  `expires_in`, and configurable `access_token_methods` respectively (1.3.1).
+
+### 1.3.1 Verified: application-less Doorkeeper access tokens (probe, 2026-09-07)
+
+Planner probe run in the container (`bin/rails runner` + `curl`), rows deleted afterwards.
+Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install`).
+
+- `Doorkeeper::AccessToken.new(resource_owner_id:, application_id: nil, expires_in:,
+  scopes:, use_refresh_token: false)` is **valid and saves**. `belongs_to :application`
+  is `optional: true` (`lib/doorkeeper/orm/active_record/mixins/access_token.rb:13-15`);
+  the only model validations are `token` presence/uniqueness and `refresh_token`
+  uniqueness when used (l.17-18). No validation on `scopes`.
+- `before_validation :generate_token, on: :create` (l.25) calls the configured
+  generator (`UniqueToken.generate` → `SecureRandom.urlsafe_base64(32)`, 43 chars) and
+  stores `SHA256(plaintext)` because Redmine enables `hash_token_secrets`
+  (`access_token_mixin.rb:472-478`, `secret_storing/sha256_hash.rb`). The plaintext
+  is available once via `#plaintext_token` on the freshly created object.
+- Lookup: `Doorkeeper::AccessToken.by_token(plain)` = `find_by_plaintext_token`
+  (hashes, then `find_by`; `models/concerns/secret_storable.rb:42-47`). Verified: found.
+- Expiry is **per row**: `expires_in` seconds relative to `created_at`
+  (`models/concerns/expirable.rb`); `expired?`, `accessible?` (= not expired and not
+  revoked), `revoke`, `revoked?` all work on an app-less token. Verified by back-dating
+  `created_at`. The global `access_token_expires_in` only feeds the OAuth flows.
+- A 43-char base64url token fails the legacy `Token.find_token` regex
+  (`/\A[a-z0-9]+\z/i`), so a Doorkeeper token can never collide with or be looked up
+  as a legacy API key. Verified: `Token.find_token('api', plain)` → nil.
+- `Doorkeeper::Application.authorized_for(user)` selects distinct `application_id`
+  from active tokens; app-less tokens do not appear on "Authorized applications".
+  Verified: count 0.
+- **HTTP, no code changes:** `Authorization: Bearer <token>` on `GET /users/current.json`
+  → 200 through the existing branch (`application_controller.rb:134-138`); with scope
+  `admin` the admin-only `GET /users.json` → 200. An expired token → 401 with
+  `WWW-Authenticate: Bearer realm="Redmine", error="invalid_token",
+  error_description="The access token expired"` (Doorkeeper's error shape via
+  `doorkeeper_render_error`, not Redmine's Basic realm).
+- **Legacy transports do not reach Doorkeeper:** `X-Redmine-API-Key: <token>` → 401,
+  Basic with token as username → 401. Two reasons: (1) Doorkeeper's default
+  `access_token_methods` are `from_bearer_authorization`, `from_access_token_param`,
+  `from_bearer_param` (`config.rb:586-591`); (2) in `find_current_user` the legacy
+  branch `if (key = api_key_from_request)` wins whenever the header/param is present,
+  and Doorkeeper sits in an `elsif`, so it is never consulted for those transports.
+  Fixable: `Doorkeeper::OAuth::Token.from_request` accepts symbols **or callables**
+  (`oauth/token.rb:7-13`), and `from_basic_authorization` (returns the Basic username,
+  l.38-42) already exists; so `access_token_methods` can be configured in
+  `config/initializers/30-redmine.rb` with two lambdas for the header and `?key=`
+  plus `:from_basic_authorization`. The branch order in `find_current_user` must then
+  become "legacy key lookup, and if that returns nil, Doorkeeper".
+- Scopes: `scopes` is a space-separated string; `#scopes.all` returns an array.
+  Redmine sets `user.oauth_scope = scopes.all.map(&:to_sym)`. With an **empty** scope
+  list `Role#allowed_permissions([])` is unrestricted (`scope.present?` is false,
+  `role.rb:304-311`) **but** `User#admin?` becomes false (`user.rb:737-739`), i.e. a
+  blank-scope token would silently drop admin. A "full access" PAT therefore needs
+  either the full enumerated scope list (frozen at creation; permissions added later
+  by plugins would be missing) or a special case that skips `oauth_scope=` for
+  app-less tokens with blank scopes (Bogdan Egikov's "blank = full access").
+- `users/show.api.rsb:14` hides `api_key` from a non-admin user authenticated via
+  OAuth (`authorized_by_oauth?`); a scoped PAT inherits that.
+- **Pre-existing gap:** `oauth_access_tokens.resource_owner_id` has a foreign key to
+  `users` (`20250611092155_create_doorkeeper_tables.rb:62-66`) and
+  `User#remove_references_before_destroy` (`user.rb:971-993`) does not delete
+  Doorkeeper rows. Verified on PostgreSQL: destroying a user who has any access token
+  raises `ActiveRecord::InvalidForeignKey`. Any design that stores PATs in this table
+  must delete them there (one line), which also fixes it for OAuth tokens.
+- Doorkeeper's own endpoints and `access_token_methods`: `GET /oauth/token/info`
+  resolves its token with `OAuth::Token.authenticate(request, *access_token_methods)`
+  (`doorkeeper/rails/helpers.rb:72-76`), so any transport we add there applies to it
+  too; its JSON tolerates a nil application (`application.try(:uid)`,
+  `access_token_mixin.rb:352`). `POST /oauth/revoke` reads `params["token"]` directly
+  (`tokens_controller.rb:148`) and is guarded by `validate_presence_of_client`
+  (l.5, l.64-78): without credentials of a registered `Doorkeeper::Application` it
+  answers 403 and revokes nothing; with them, an application-less token passes
+  `authorized?` (l.102-112). Neither endpoint is changed by the PAT slice.
+- Subclassing: `Doorkeeper::AccessToken` is a plain `ActiveRecord::Base` subclass
+  including a mixin (`orm/active_record/access_token.rb`). The table has no `type`
+  column, so a `PersonalAccessToken < Doorkeeper::AccessToken` subclass shares the
+  table without STI and can carry its own validations and scope
+  (`where(application_id: nil)`); Doorkeeper's own lookup still instantiates the base
+  class. Extra columns (`name`, `last_used_at`, suffix) are added by a Redmine
+  migration; the app owns the schema of these tables.
 
 ### 1.4 My account
 
@@ -221,6 +302,19 @@ What this says about "extend OAuth" vs "standalone PAT":
   calls `Redmine::SudoMode.disable!` globally; `test/integration/sudo_mode_test.rb`
   re-enables it per test. So "sudo-protected" in a spec means: declare it with
   `require_sudo_mode`, and it only bites when an admin turned sudo mode on.
+- Flash rendering: the layout prints flash entries through
+  `ApplicationHelper#render_flash_messages` (`app/helpers/application_helper.rb:516-524`),
+  the only flash iterator in `app/` and `lib/` (grep `flash.each`). It skips any value
+  that is not a String (`next unless v.is_a?(String)`) and renders the rest with
+  `html_safe` inside `div.flash#flash_<key>`. Consequences: a non-String flash value
+  (Array) is never printed by the layout (the backup-codes controller relies on this,
+  `twofa_backup_codes_controller.rb:57`), and flash strings must never contain user
+  input. `FlashHash#delete` returns the hash, not the value.
+- Development error page: with `consider_all_requests_local = true`
+  (`config/environments/development.rb:17`, also test) Rails' debug page includes a
+  session dump (`actionpack rescues/_request_and_response.html.erb:7-8`), which still
+  holds the previous request's flash until the action completes. Production renders
+  a static page.
 - Menus: `Redmine::MenuManager` (`lib/redmine/menu_manager.rb`), maps defined in
   `lib/redmine/preparation.rb` (`:top_menu` l.164, `:account_menu` l.175 with
   `:my_account`, `:admin_menu` l.242). `menu_item :id, :only => [...]` at controller
@@ -262,7 +356,9 @@ What this says about "extend OAuth" vs "standalone PAT":
   tests, `Redmine::IntegrationTest`), `integration/api_test/` (one file per API resource,
   `Redmine::ApiTest::Base`), `integration/routing/`, `system/` (Capybara),
   `fixtures/`, `helpers/`, `test_helper.rb`, `object_helpers.rb` (`User.generate!`
-  etc.). Minitest, fixtures are loaded per class with `fixtures :users, :tokens, ...`.
+  etc.). Minitest; `fixtures :all` is declared once on `ActiveSupport::TestCase`
+  (`test_helper.rb:59`), so every fixture is available in every test (corrected per
+  critique C-5; some older test files still list `fixtures :users, ...` redundantly).
 - `test/test_helper.rb`:
   - `Redmine::IntegrationTest#log_user(login, password)` (l.412) and
     `#credentials(user, password=nil)` (l.428) → `{'HTTP_AUTHORIZATION' => Basic ...}`
@@ -309,9 +405,10 @@ What this says about "extend OAuth" vs "standalone PAT":
 - `config/application.rb:68`: `config.filter_parameters += [:password]` is the only
   filter. There is no `config/initializers/filter_parameter_logging.rb`. Nothing in 6.1.2
   filters `key`, `X-Redmine-API-Key` or `access_token`. A PAT sent via `?key=` would be
-  logged in plaintext by Rails' request log today; upstream is handling this separately
-  (#44371), so we should not duplicate it but the README can mention it as a known
-  limitation of `?key=` transport.
+  logged in plaintext by Rails' request log today. Upstream is handling this in #44371.
+  **Superseded by D-012 (2026-09-07):** we filter `key` and `bearer_token` ourselves now
+  (anchored regexes next to `:password`), and the README notes the overlap so
+  maintainers can drop whichever lands second.
 
 ### 1.9 i18n
 
@@ -390,6 +487,9 @@ For each component, once built: what it is, how it works, why it is shaped that 
 
 ## 3. Workflow and tooling notes
 
-- Tool: Claude Code (Claude Fable 5.1) with custom subagents in `.claude/agents/`.
+- Tool: Claude Code (Claude Fable 5.1). Each role (planner, critic, implementer,
+  reviewer) runs in its own session started by the human (D-018); the definitions in
+  `.claude/agents/` are for explicit invocation by the human only. Specs live in
+  `ai-workflow/specs/` (D-019).
 - Raw transcripts live in `~/.claude/projects/-Users-kbagaiev-Projects-TaxDome/` and
   are copied unedited into `ai-workflow/logs/` before submission.

@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Code reviewer for the Redmine PAT task. Use after the implementer finishes a step or the whole slice, to check the diff against ai-workflow/spec.md, security, Redmine conventions, tests, and docs. Read-only apart from running tests; returns a structured review report for the human's final review.
+description: Code reviewer for the Redmine PAT task. Use after the implementer finishes a step or the whole slice, to check the diff against the feature spec in ai-workflow/specs/, security, Redmine conventions, tests, and docs. Read-only apart from running tests; returns a structured review report for the human's final review.
 tools: Read, Grep, Glob, Bash
 ---
 

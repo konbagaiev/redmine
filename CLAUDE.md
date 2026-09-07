@@ -32,11 +32,15 @@ The short version:
 ## The AI development pipeline
 
 Work flows through four agent roles. Each role has a definition in `ai-workflow/roles/`.
-The **planner runs in the main session**: the human talks to it directly and watches
-its reasoning, so it is never delegated to a subagent. When the human says "act as
-planner" (or the work is clearly planning), load `ai-workflow/roles/planner.md` and
-follow it. The critic, implementer, and reviewer are Claude Code subagents in
-`.claude/agents/` that load their role files. The human (Konstantin) co-plans and does
+**Every role runs in its own Claude Code session, started by the human.** When the
+human says "act as planner" / "act as critic" / "act as implementer" / "act as
+reviewer" (or the work is clearly that role's), load the matching file in
+`ai-workflow/roles/` and follow it for the rest of the session. **No role ever
+launches another role**: the planner does not spawn the critic, the implementer does
+not spawn the reviewer, and so on. A role ends its session with a hand-over summary;
+the human reads it, decides, and starts the next session. The `.claude/agents/`
+definitions exist only so the human can invoke a role explicitly (for example with
+`@critic`); they are not for roles to call. The human (Konstantin) co-plans and does
 the final code review.
 
 ## About the human
@@ -55,7 +59,7 @@ Consequences for every role:
 
 | Step | Role | Reads | Writes |
 |------|------|-------|--------|
-| 1 | **Planner** (`roles/planner.md`, main session) | task context, architecture, decisions | `ai-workflow/spec.md`, appends to `decisions.md` |
+| 1 | **Planner** (`roles/planner.md`) | task context, architecture, decisions | the feature spec in `ai-workflow/specs/`, appends to `decisions.md` |
 | 2 | **Critic** (`roles/critic.md`) | spec, architecture, decisions, Redmine code | a critique (returned to the human; resolutions go to the spec and `decisions.md`) |
 | 3 | **Implementer** (`roles/implementer.md`) | spec, architecture, decisions | code, tests, docs (README), updates `architecture.md` |
 | 4 | **Reviewer** (`roles/reviewer.md`) | spec, diff, tests | a review report (returned to the human) |
@@ -63,6 +67,9 @@ Consequences for every role:
 
 Rules of the pipeline:
 
+- Roles do not launch other roles. The human starts each role in a separate session
+  and carries the hand-over between them. If a role thinks the next role should run,
+  it says so in its closing summary and stops.
 - The planner works **with** the human, not for them. It asks questions and proposes
   options; the human decides. Each decision is appended to `decisions.md`.
 - The critic never edits the plan. It produces findings. The human and planner decide
@@ -83,7 +90,12 @@ Rules of the pipeline:
 All live under `ai-workflow/`. Every agent reads the ones relevant to its role before
 starting, and updates only the ones its role owns.
 
-- **`spec.md`** — the feature specification. Owned by the planner. Describes what we
+- **`specs/<DD_MM_HH_MM>_<slug>_spec.md`** — one feature specification per feature,
+  e.g. `specs/07_09_22_31_PAT_tokens_spec.md` (the PAT core). The prefix is the
+  creation time (day_month_hour_minute), the slug names the feature; the file is never
+  renamed afterwards. The human names the spec when starting a role session ("act as
+  critic on specs/07_09_22_31_PAT_tokens_spec.md"); if not named, the newest file in
+  `specs/` is the current one. Owned by the planner. Describes what we
   build, scope boundaries, data model, API surface, UI, tests, and acceptance criteria.
   This is the implementer's contract.
 - **`decisions.md`** — **append-only** decision log. Never edit or delete an entry. Each
@@ -115,8 +127,8 @@ starting, and updates only the ones its role owns.
   Commit history is a graded artifact.
 - Logs: Claude Code stores raw session transcripts under
   `~/.claude/projects/-Users-kbagaiev-Projects-TaxDome/`. Before final submission, copy
-  them unedited into `ai-workflow/logs/`. Subagent transcripts are stored alongside
-  and must be included too.
+  them unedited into `ai-workflow/logs/`. Every role session (planner, critic,
+  implementer, reviewer) is a separate transcript and must be included.
 
 ## Repository and environment
 

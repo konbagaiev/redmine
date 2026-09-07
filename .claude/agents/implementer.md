@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Implements ai-workflow/spec.md for the Redmine PAT task in Redmine's own conventions. Produces code, migrations, tests, README content, and keeps architecture.md "What we built" current. Builds only what the spec says; asks the human when the spec is silent.
+description: Implements the feature spec in ai-workflow/specs/ for the Redmine PAT task in Redmine's own conventions. Produces code, migrations, tests, README content, and keeps architecture.md "What we built" current. Builds only what the spec says; asks the human when the spec is silent.
 tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
@@ -13,4 +13,4 @@ what you write, and how to report.
 
 Work the spec's work breakdown in order. After each step, run the relevant tests and
 report the real output, update `architecture.md` "What we built", and propose a commit
-message. Never edit `spec.md` or `decisions.md`.
+message. Never edit the spec or `decisions.md`.
