@@ -1,0 +1,17 @@
+# Database config used inside the Docker containers (mounted over config/database.yml).
+# Matches the PostgreSQL service in compose.yaml. PostgreSQL 14+ is one of the databases
+# Redmine's own CI runs against.
+default: &default
+  adapter: postgresql
+  host: <%= ENV.fetch("REDMINE_DB_HOST", "db") %>
+  username: <%= ENV.fetch("REDMINE_DB_USERNAME", "redmine") %>
+  password: <%= ENV.fetch("REDMINE_DB_PASSWORD", "redmine") %>
+  encoding: utf8
+
+development:
+  <<: *default
+  database: redmine_development
+
+test:
+  <<: *default
+  database: redmine_test

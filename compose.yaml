@@ -1,0 +1,54 @@
+# Local development environment for the Redmine personal-access-tokens slice.
+#
+#   docker compose up -d --build      # build image, start postgres + rails server
+#   docker compose exec app bin/rails db:create db:migrate
+#   docker compose exec app bin/rails redmine:load_default_data REDMINE_LANG=en
+#   open http://localhost:3300        # login admin / admin (you will be asked to change it)
+#   (host port is REDMINE_PORT, default 3300, to avoid clashing with other local apps)
+#   postgres is published on REDMINE_DB_PORT, default 5433 (5432 is often taken by a
+#   local postgres): host localhost, user redmine, password redmine, db redmine_development
+#
+#   docker compose exec app bin/rails test test/unit/personal_access_token_test.rb
+#   docker compose exec app bin/rails test                     # full suite (slow)
+#
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: redmine
+      POSTGRES_PASSWORD: redmine
+      POSTGRES_DB: redmine_development
+    ports:
+      - "${REDMINE_DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redmine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RAILS_ENV: development
+      REDMINE_DB_HOST: db
+      REDMINE_DB_USERNAME: redmine
+      REDMINE_DB_PASSWORD: redmine
+    ports:
+      - "${REDMINE_PORT:-3300}:3000"
+    volumes:
+      - .:/redmine
+      - ./docker/database.yml:/redmine/config/database.yml:ro
+      - bundle:/usr/local/bundle
+    stdin_open: true
+    tty: true
+
+volumes:
+  pgdata:
+  bundle:
