@@ -1462,3 +1462,4 @@ en:
   reaction_text_x_other_users:
     one: "1 other"
     other: "%{count} others"
+  setting_personal_access_token_max_lifetime: Maximum lifetime of personal access tokens

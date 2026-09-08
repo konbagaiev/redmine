@@ -486,7 +486,7 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown steps 1 to 4 of 7 done** (spec section 12). Steps 5-7 not started.
+Status: **work breakdown steps 1 to 5 of 7 done** (spec section 12). Steps 6-7 not started.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
@@ -659,6 +659,32 @@ Status: **work breakdown steps 1 to 4 of 7 done** (spec section 12). Steps 5-7 n
   `WWW-Authenticate` challenges; a username/password Basic request costs one extra
   hashed `find_by` that returns nil. Scoped tokens keep 6.1.2 behaviour: an
   application token with `view_issues` gets 403 on the admin endpoint (tested).
+
+### 2.5 Admin setting: maximum token lifetime (step 5, D-008)
+
+- What: `app/views/settings/_api.html.erb` gains a third row, a `setting_select`
+  for `personal_access_token_max_lifetime` with "disabled" (0) plus the six
+  `LIFETIMES` values labelled "N days", the same shape as `password_max_age` on the
+  authentication tab (`_authentication.html.erb:26`). Label
+  `setting_personal_access_token_max_lifetime` appended to `config/locales/en.yml`.
+  The YAML declaration itself landed in step 3 (D-027). Tests: two additions to
+  `test/functional/settings_controller_test.rb`.
+- How: `setting_select` (`settings_helper.rb:66-74`) renders the label from
+  `setting_<name>` and a `<select name="settings[...]">` preselecting the stored
+  value; `SettingsController#edit` saves every posted `settings[...]` key that is
+  declared in `settings.yml`. The value is stored as the string `"30"` (Redmine
+  keeps int-format settings as strings and callers use `.to_i`), which is why
+  `PersonalAccessToken.allowed_lifetimes` converts. `security_notifications: 1`
+  makes a change email the admins, like `password_max_age`.
+- Why: D-008, an org-wide cap applied at creation only; the picker on the user page
+  and the model validation both derive from `allowed_lifetimes`, so the admin UI,
+  the user UI and the server agree by construction.
+- Verified: `settings_controller_test.rb` 22 runs green, including the select's
+  seven options and a POST that saves 30 and narrows `allowed_lifetimes` to
+  `[7, 30]`; RuboCop clean; `locales:check_interpolation` clean.
+- Known limits: a cap set from the console to a value not in the list (say 45)
+  offers only list values at or below it (7, 30); the admin UI cannot produce such
+  a value. Existing tokens are never shortened.
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:

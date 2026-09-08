@@ -4,6 +4,9 @@
 <p><%= setting_check_box :rest_api_enabled %></p>
 
 <p><%= setting_check_box :jsonp_enabled %></p>
+
+<p><%= setting_select :personal_access_token_max_lifetime,
+       [[l(:label_disabled), 0]] + PersonalAccessToken::LIFETIMES.collect {|days| [l('datetime.distance_in_words.x_days', :count => days), days.to_s]} %></p>
 </div>
 
 <%= submit_tag l(:button_save) %>
