@@ -475,3 +475,62 @@ Format:
 - Consequences: spec v3. Two critic rounds have run, which is the pipeline's expected
   maximum; a third round requires the human's explicit decision (CLAUDE.md).
 - References: C-12 to C-15; D-020, D-022; `architecture.md` 1.3.1, 1.4
+
+## D-024: Commit 1 adopts upstream's #44343 fix (r24916, 6.1.4); supersedes the callback form in D-015
+- Date: 2026-09-08
+- Decided by: human (reviewer finding R-5)
+- Context: D-015 fixed user deletion with OAuth rows by adding two `delete_all` calls
+  to `User#remove_references_before_destroy`. The reviewer found that upstream fixed
+  the same bug in #44343 ("Fix deleting a user who has authorized an OAuth2
+  application fails with ActiveRecord::InvalidForeignKey"), trunk r24916
+  (commit 60de97a2f), backported to 6.1-stable as 0b71fe230 and released in 6.1.4.
+  Upstream's form is two associations on `User`:
+  `has_many :oauth_access_grants` and `has_many :oauth_access_tokens`, both
+  `:class_name => 'Doorkeeper::...'`, `:foreign_key => :resource_owner_id`,
+  `:dependent => :delete_all`, placed after `has_many :reactions`.
+- Decision: Commit 1 uses upstream's form verbatim and drops the callback lines.
+  Supersedes the mechanism in D-015; the rest of D-015 (separate first commit, README
+  "important items" entry) stands. The commit message references #43881 and #44343
+  and states it is the 6.1.4 fix applied to 6.1.2, so maintainers see it vanish on
+  rebase. Our unit test stays because it covers an application-less token, which
+  upstream's two tests do not; upstream's tests are not copied.
+- Alternatives considered: keep the callback form (works, but diverges from what
+  6.1.4 ships and would conflict on rebase); rebase the whole branch onto 6.1.4 (the
+  brief fixes the base at tag 6.1.2).
+- Consequences: spec 3.3, the section 2 table, the README plan (section 9) and the
+  work breakdown (section 12) updated; `has_many :personal_access_tokens` needs no
+  `dependent` option. The implementer replaces the two callback lines currently in the
+  working tree with the associations.
+- References: R-5 (reviewer report, separate session); #44343; upstream commits
+  60de97a2f, 0b71fe230; tag 6.1.4 `app/models/user.rb:105-109`, `test/unit/user_test.rb:239-272`
+
+## D-025: Commit 2 adopts upstream's #44371 fix (r24992, 6.1.4) and adds only `bearer_token`
+- Date: 2026-09-08
+- Decided by: human + planner (same pattern as D-024)
+- Context: D-012 decided to filter `key` and `bearer_token` from parameter logging
+  ourselves rather than wait for #44371. Inspecting tag 6.1.4 shows #44371 shipped:
+  trunk r24992, backported to 6.1-stable as ddd1ea49e, changing
+  `config/application.rb:68` to
+  `config.filter_parameters += [:password, :salt, :twofa_totp_key, /\Akey\z/]` and
+  adding `test/unit/lib/parameter_filtering_test.rb` (five cases including the
+  anti-over-filtering `keywords` check). The `key` regex is identical to ours.
+- Decision: Commit 2 applies upstream's change verbatim (including `:salt` and
+  `:twofa_totp_key`, which are unrelated to PATs but keep the line identical to 6.1.4)
+  and appends `/\Abearer_token\z/`, the one transport Doorkeeper reads but neither
+  Doorkeeper nor upstream filters. Upstream's test file is added verbatim, in its
+  `test "..."` style (an accepted exception to `conventions.md`, because it is an
+  upstream file), with one appended case for `bearer_token`. The separate
+  `test_key_param_should_be_filtered_from_logs` planned in spec 8.3 is dropped as a
+  duplicate. The commit message references #43881 and #44371 and states it is the
+  6.1.4 fix applied to 6.1.2. The README's "important items" entry changes from
+  "overlap with #44371" to "upstream fix applied; only `bearer_token` survives a
+  rebase".
+- Alternatives considered: our own minimal line (`[:password, /\Akey\z/, /\Abearer_token\z/]`),
+  which conflicts on rebase and duplicates upstream's test; rebasing the branch onto
+  6.1.4 (the brief fixes the base at 6.1.2).
+- Consequences: spec status, 2, 4.3, 8.3, 9 and 12 updated; `architecture.md` 1.8
+  updated. Unrelated 6.1.3/6.1.4 change noted and not adopted: #43698 (r24514)
+  patches `Doorkeeper::AuthorizationsController#render_error` in `30-redmine.rb`; it
+  concerns the authorization-code flow only and is outside this slice.
+- References: D-012, D-016, D-024; #44371; upstream commit ddd1ea49e; tag 6.1.4
+  `config/application.rb:68`, `test/unit/lib/parameter_filtering_test.rb`

@@ -7,6 +7,13 @@ C-1 to C-11 accepted and applied (D-020, D-021, D-022). Critic round 2: C-12 to 
 accepted and applied (D-023). Two critic rounds have run; planning is closed. Later
 changes to this spec require a note here and a new `D-NNN` entry.
 
+Amendments after approval:
+- 2026-09-08, D-024 (reviewer R-5): section 3.3 now uses upstream's #44343 fix from
+  6.1.4 (`has_many ... :dependent => :delete_all`) instead of callback lines.
+- 2026-09-08, D-025: section 4.3 now applies upstream's #44371 fix from 6.1.4
+  verbatim (`salt`, `twofa_totp_key`, anchored `key`, upstream test file) and adds
+  only `bearer_token`; the duplicate test in 8.3 is dropped.
+
 Owner: planner (`ai-workflow/roles/planner.md`). This document is the implementer's
 contract. Anything not covered here is a question to the human, not an improvisation.
 Decisions are referenced as `D-NNN` (`ai-workflow/decisions.md`); Redmine facts as
@@ -51,14 +58,14 @@ by its owner (D-010).
 | Expiry | Mandatory, lifetime picker 7/30/60/90/180/365 days → `expires_in` seconds | D-006 |
 | Admin cap | `Setting.personal_access_token_max_lifetime` (days, 0 = no cap), API tab | D-008 |
 | Transports | Bearer, `access_token`/`bearer_token` params, `X-Redmine-API-Key`, `?key=`, Basic username | D-012 |
-| Log filtering | `key` and `bearer_token` added to `filter_parameters` now | D-012, D-016 |
+| Log filtering | Upstream #44371 fix (6.1.4) applied verbatim (`salt`, `twofa_totp_key`, anchored `key`) plus our `bearer_token` | D-012, D-016, D-025 |
 | Full access | Blank scopes on an app-less token → `oauth_scope` is not set | D-010 |
 | Last used | Direct column write, 1-minute throttle | D-013 |
 | Revocation | `revoked_at` set, row kept; expired tokens listed until revoked | D-014 |
 | UI | Page `my/api_tokens`, new controller, sidebar untouched, link in My account contextual bar | D-005 |
 | Show once | Redirect after create, plaintext one hop in the flash (Array-wrapped, consumed by the first `before_action`), `no_store`, notice on refresh | D-007, D-022 |
 | 2FA / password expiry | PAT equals the legacy key: not checked (Basic-username nuance documented) | D-021 |
-| User deletion | Delete the user's OAuth tokens and grants before destroy; separate first commit; README item | D-015 |
+| User deletion | Upstream #44343 fix (6.1.4) applied verbatim: `has_many` with `:dependent => :delete_all` for OAuth tokens and grants; separate first commit; README item | D-015, D-024 |
 
 ## 3. Data model
 
@@ -167,13 +174,30 @@ Integer or nil, and the callback turns it into `expires_in`.*
 
 ### 3.3 `User` additions (`app/models/user.rb`)
 
+- User-deletion fix (D-015, form per D-024 / reviewer R-5): adopt **upstream's fix from
+  #44343** (trunk r24916, commit 60de97a2f; backported to 6.1-stable as 0b71fe230;
+  released in 6.1.4) verbatim, placed after `has_many :reactions` (l.104):
+
+  ```ruby
+  has_many :oauth_access_grants, :class_name => 'Doorkeeper::AccessGrant',
+           :foreign_key => :resource_owner_id, :dependent => :delete_all
+  has_many :oauth_access_tokens, :class_name => 'Doorkeeper::AccessToken',
+           :foreign_key => :resource_owner_id, :dependent => :delete_all
+  ```
+
+  Nothing is added to `remove_references_before_destroy`. Commit 1 message references
+  both #43881 and #44343 and says it is the 6.1.4 fix applied to 6.1.2. Our unit test
+  (8.2) stays, because it also covers an application-less token, which upstream's two
+  tests (`test_destroy_should_delete_oauth_access_grants` / `_tokens`, 6.1.4
+  `user_test.rb:239-272`) do not; do not copy upstream's tests.
 - `has_many :personal_access_tokens, lambda {where(:application_id => nil)},
-  :foreign_key => 'resource_owner_id', :dependent => nil` next to `:api_token` (l.102).
-  No `dependent` option: deletion is handled below.
-- `remove_references_before_destroy` (l.971-993): add
-  `Doorkeeper::AccessToken.where(:resource_owner_id => id).delete_all` and
-  `Doorkeeper::AccessGrant.where(:resource_owner_id => id).delete_all` next to the
-  `Token` line (l.993). This is the D-015 fix, shipped as its own commit.
+  :foreign_key => 'resource_owner_id'` next to `:api_token` (l.102). No `dependent`
+  option: the `oauth_access_tokens` association above already deletes every token of
+  the user, PATs included.
+
+*`has_many ... :dependent => :delete_all` tells ActiveRecord to issue one `DELETE`
+for the associated rows before the user row is deleted, without loading them or
+running their callbacks; that is why upstream chose it over a `destroy` cascade.*
 
 ## 4. Authentication flow
 
@@ -272,14 +296,21 @@ session (`arch 1.1`).*
 
 ### 4.3 Log filtering (`config/application.rb:68`)
 
+Adopt **upstream's #44371 fix** (trunk r24992, backported to 6.1-stable as ddd1ea49e,
+released in 6.1.4) verbatim, and append our one addition on the same line (D-025):
+
 ```ruby
-config.filter_parameters += [:password, /\Akey\z/, /\Abearer_token\z/]
+config.filter_parameters += [:password, :salt, :twofa_totp_key, /\Akey\z/, /\Abearer_token\z/]
 ```
 
-Anchored, like Doorkeeper's own filter (`doorkeeper/engine.rb:9`), so unrelated
-parameters containing "key" are not masked. Doorkeeper already filters
-`access_token`, `refresh_token`, `client_secret`, `code`. Headers are not logged by
-Rails. (D-012, D-016)
+`:salt` and `:twofa_totp_key` are upstream's, unrelated to PATs, kept so the line is
+byte-identical to 6.1.4 apart from the trailing `bearer_token` entry. Also add
+upstream's `test/unit/lib/parameter_filtering_test.rb` verbatim (it uses the
+`test "..."` form; that is the upstream file, do not restyle it) and append one case
+there for `bearer_token`. Anchored, like Doorkeeper's own filter
+(`doorkeeper/engine.rb:9`), so `keywords` is not masked (upstream tests this).
+Doorkeeper already filters `access_token`, `refresh_token`, `client_secret`, `code`.
+Headers are not logged by Rails. (D-012, D-016, D-025)
 
 ## 5. UI
 
@@ -514,10 +545,8 @@ target `GET /users/current.xml` like `authentication_test.rb`:
   200 on an admin-only endpoint.
 - `test_pat_should_update_last_used_at`: nil before, present after one request.
 - `test_pat_should_be_refused_when_rest_api_disabled`: `with_settings(:rest_api_enabled => '0')` → 403.
-- `test_key_param_should_be_filtered_from_logs`: assert
-  `Rails.application.config.filter_parameters` masks `key` and `bearer_token` via
-  `ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters).filter('key' => 'x', 'bearer_token' => 'y', 'keyword' => 'z')`
-  → `key` and `bearer_token` are `[FILTERED]`, `keyword` untouched.
+- Parameter filtering is tested in upstream's `test/unit/lib/parameter_filtering_test.rb`
+  (commit 2, D-025) plus our appended `bearer_token` case there; no duplicate here.
 
 ### 8.4 Functional `test/functional/personal_access_tokens_controller_test.rb`
 
@@ -599,16 +628,19 @@ untouched; GitHub renders `README.md` on the fork's landing page. Contents:
   and the test commands.
 - How the PAT core works and its limits: token format, hashing, lookup, expiry,
   revocation, last-used throttle, the Bearer-style 401 on expiry, `?key=` and
-  front-end logs (D-016), overlap with #44371, 2FA and password-expiry equivalence
+  front-end logs (D-016), the #44371 fix applied from 6.1.4 with `bearer_token`
+  added (D-025), 2FA and password-expiry equivalence
   with the legacy key including the Basic-username difference (D-021), the global
   `access_token_methods` effect on `/oauth/token/info` (C-4; `/oauth/revoke` is
   unaffected, C-12), the lost-token-on-session-expiry UX limit (C-2), the
   development-only error page session dump (C-14), and the
   official Doorkeeper `custom_access_token_attributes` hook as supporting evidence
   that app-owned extra columns are an intended extension point (C-5).
-- **Important items to discuss (D-015):** the user-deletion foreign-key fix changes
-  existing OAuth behaviour; the locked-user `nil.oauth_scope=` guard; the
-  `filter_parameters` overlap with #44371.
+- **Important items to discuss (D-015, D-024):** the user-deletion foreign-key fix
+  is upstream's own #44343 fix from 6.1.4 applied to 6.1.2 (it disappears on rebase
+  to 6.1.4+); the locked-user `nil.oauth_scope=` guard; the `filter_parameters`
+  line is upstream's #44371 fix from 6.1.4 plus one `bearer_token` entry, so only
+  that entry survives a rebase (D-025).
 - The AI workflow: pointer to `ai-workflow/`, the four roles, logs location, tools used.
 
 **`architecture.md` section 2 "What we built"**: owned by the implementer, one
@@ -662,8 +694,13 @@ None open. The critic may reopen any of the above with evidence.
 
 ## 12. Work breakdown (one commit each, tests green after every step)
 
-1. **Fix user deletion with OAuth tokens/grants** (`user.rb`, `user_test.rb`). D-015.
-2. **Filter `key` and `bearer_token` from parameter logging** (`application.rb`, test in 8.3 moved here or a unit test under `test/unit/lib/`). D-012.
+1. **Fix user deletion with OAuth tokens/grants** (`user.rb`, `user_test.rb`), in the
+   upstream #44343 form. D-015, D-024.
+2. **Filter `key` (and `salt`, `twofa_totp_key`) from parameter logging in the upstream
+   #44371 form, plus `bearer_token`** (`application.rb`, upstream's
+   `test/unit/lib/parameter_filtering_test.rb` plus one appended case). Commit message
+   references #43881 and #44371 and says it is the 6.1.4 fix applied to 6.1.2.
+   D-012, D-025.
 3. **Migration + model + object helper + unit tests** (3.1, 3.2, 8.1, `User#personal_access_tokens`). D-009, D-010, D-011.
 4. **Authentication** (4.1, 4.2, integration tests 8.3, `arch` note on the locked-user guard). D-010, D-012, D-013.
 5. **Setting + admin API tab + i18n + tests** (6, 8.6). D-008.
