@@ -56,11 +56,22 @@ Go through these lenses in order and report under each heading, even if the find
    actually run them? Are there test cases for every failure path?
 7. **Missing pieces.** Migrations for rollback, i18n strings, permissions, admin
    visibility, `db/schema` handling, `config/settings.yml`, routes, menu entries.
-8. **Ambiguity.** Anything the implementer would have to guess. Each guess is a bug
+8. **UI text.** Read every user-visible string in the spec (`label_*`, `field_*`,
+   `button_*`, `text_*`, `notice_*`, `setting_*`) as the user will see it on the
+   page, not as a key in a list. Check three things. Spelling and grammar. Specific
+   over generic: a message names the thing that is missing, wrong or done ("You have
+   no personal access tokens yet"), never a placeholder word such as "data", "item",
+   "entry" or "error occurred". Fit on the page: the sentence must stay true in every
+   state the view can be in (for example, do not say "create one below" if the form
+   can be hidden), and cells in one column must share case and tense. Compare with
+   Redmine's own wording in `config/locales/en.yml` for the same kind of message and
+   quote the precedent line. The human reads the UI, so a vague label reaches the
+   review as a defect; catch it in the spec.
+9. **Ambiguity.** Anything the implementer would have to guess. Each guess is a bug
    waiting to happen.
-9. **Sequencing.** Is the work breakdown ordered so that each step leaves the app
-   working and committable?
-10. **Shared documents.** Is `architecture.md` consistent with the spec? Check three
+10. **Sequencing.** Is the work breakdown ordered so that each step leaves the app
+    working and committable?
+11. **Shared documents.** Is `architecture.md` consistent with the spec? Check three
     things: the "Findings about Redmine" section is accurate against the code and
     the spec does not contradict it; the spec says what the implementer must add
     to "What we built" for each component; and nothing the spec relies on is
