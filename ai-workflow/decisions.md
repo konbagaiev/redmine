@@ -597,3 +597,49 @@ Format:
   (the human's call, outside the planner's remit).
 - Consequences: README content only; no code or test change.
 - References: spec 4.2, 8.3, 9; `architecture.md` 1.3.1; D-021
+
+## D-029: The empty token list says there are no tokens, not "No data to display"
+- Date: 2026-09-08
+- Decided by: human
+- Context: After step 6 the human opened `my/api_tokens` with no tokens and saw
+  Redmine's generic `label_no_data` ("No data to display"), which the spec (5.3) had
+  prescribed. On a page whose purpose is one list, "data" is vague; the message should
+  say what is missing and what to do.
+- Decision: New key `text_personal_access_token_none` ("You have no personal access
+  tokens yet. Create one below to access the REST API."), rendered inside the same
+  `<p class="nodata">` so the styling matches other empty states (precedent for custom
+  text in `p.nodata`: `app/views/sudo_mode/new.html.erb:2`). `label_no_data` is no
+  longer reused by this feature. Spec 5.3, 5.4 and 8.4 amended; one functional test
+  added.
+- Alternatives considered: keep `label_no_data` (consistent with most Redmine lists,
+  but uninformative here); hide the paragraph entirely (the form below then looks
+  like the whole page, with no explanation).
+- Consequences: one i18n key, one view line, one test in step 6's commit or a small
+  follow-up commit at the human's discretion.
+- References: spec 5.3, 5.4, 8.4; D-005
+
+## D-030: `full_access?` requires an expiry; foreign app-less tokens without one keep 6.1.2 behaviour
+- Date: 2026-09-08
+- Decided by: human (reviewer finding R-27, step 6 review)
+- Context: `PersonalAccessToken.full_access?` (spec 3.2) granted full access to any
+  `Doorkeeper::AccessToken` with `application_id` nil and blank scopes. A row created
+  outside our model (Rails console, a plugin, a migration) with `expires_in` nil and
+  no scopes therefore became a never-expiring full-access credential. In 6.1.2 the same
+  row authenticated with an empty `oauth_scope` and could do nothing (`admin?` false,
+  `allowed_to?` filtered to nothing). Confirmed by the reviewer by experiment in the
+  container.
+- Decision: `full_access?` additionally requires `access_token.expires_in.present?`.
+  Full access is granted only to application-less tokens that carry the mandatory
+  expiry, which every token issued by `PersonalAccessToken` does (D-006). Foreign
+  application-less tokens without expiry fall back to 6.1.2 behaviour: they
+  authenticate with an empty scope and can do nothing. Spec 3.2, 8.1 (fifth case in
+  the `full_access?` unit test), 8.3 (one integration test) and 9 (README limits)
+  amended; status note added.
+- Alternatives considered: also requiring `name.present?` (rejected: would block a
+  future admin tool that issues expiring application-less tokens); excluding nameless
+  rows from the token list (rejected: the owner should be able to see and revoke
+  them).
+- Consequences: one condition in the model, one unit-test case, one integration test,
+  one README sentence. Tokens created by our model are unaffected.
+- References: R-27 (reviewer report, separate session); spec 3.2, 4.2, 8.1, 8.3, 9;
+  D-006, D-010

@@ -447,6 +447,14 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
   `locales:dup`. Core commits usually add keys only to `en.yml` (other locales fall
   back), so we do not need to touch the other 50 files.
 
+- **Finding (step 6): the `field_<attr>` label lookup is not global.** It is
+  `ApplicationRecord.human_attribute_name` (`app/models/application_record.rb:23-33`),
+  which prepends `field_<class>_<attr>` and `field_<attr>` to the I18n defaults.
+  `Doorkeeper::AccessToken` descends from `ActiveRecord::Base` directly, so
+  `PersonalAccessToken` bypassed it: the form label and the validation message read
+  "Lifetime days" although `field_lifetime_days` was defined. The model now
+  repeats that method (`personal_access_token.rb`, `self.human_attribute_name`);
+  see 2.6 and the proposed decision entry in the step-6 report.
 ### 1.10 Other things a PAT design must respect
 
 - `safe_attributes` (`lib/redmine/safe_attributes.rb:33-84`): the Redmine idiom for
@@ -486,7 +494,7 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown steps 1 to 5 of 7 done** (spec section 12). Steps 6-7 not started.
+Status: **work breakdown steps 1 to 6 of 7 done** (spec section 12). Step 7 (docs) not started.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
@@ -659,6 +667,10 @@ Status: **work breakdown steps 1 to 5 of 7 done** (spec section 12). Steps 6-7 n
   `WWW-Authenticate` challenges; a username/password Basic request costs one extra
   hashed `find_by` that returns nil. Scoped tokens keep 6.1.2 behaviour: an
   application token with `view_issues` gets 403 on the admin endpoint (tested).
+  `full_access?` also requires `expires_in` (D-030, reviewer R-27): a foreign
+  application-less token without expiry, made from the console or by a plugin,
+  authenticates with an empty scope and can do nothing, as in 6.1.2; it is still
+  listed on `my/api_tokens` and can be revoked there.
 
 ### 2.5 Admin setting: maximum token lifetime (step 5, D-008)
 
@@ -685,6 +697,68 @@ Status: **work breakdown steps 1 to 5 of 7 done** (spec section 12). Steps 6-7 n
 - Known limits: a cap set from the console to a value not in the list (say 45)
   offers only list values at or below it (7, 30); the admin UI cannot produce such
   a value. Existing tokens are never shortened.
+
+### 2.6 Self-service page `my/api_tokens` (step 6, D-005, D-006, D-007, D-014, D-022, D-029)
+
+- What: three hand-written routes in `config/routes.rb` (`my/api_tokens` GET/POST,
+  `my/api_tokens/:id` DELETE) to the new `PersonalAccessTokensController`
+  (`app/controllers/personal_access_tokens_controller.rb`) with one view
+  (`app/views/personal_access_tokens/index.html.erb`), a link in the contextual bar
+  of My account (`app/views/my/account.html.erb:5`, shown only when the REST API is
+  enabled), and seventeen locale keys appended to `en.yml`, including the specific
+  empty-state sentence `text_personal_access_token_none` (D-029). Tests:
+  `test/functional/personal_access_tokens_controller_test.rb` (19 tests), two sudo
+  mode tests in `test/integration/sudo_mode_test.rb`, a routing test in
+  `test/integration/routing/my_test.rb`, two link tests in `my_controller_test.rb`.
+- How the page works: `index` lists the owner's non-revoked tokens (expired ones
+  stay listed, marked "Expired", until revoked, D-014) with name, the last four
+  characters of the token, created, expires, last used ("used N ago" or "Never"),
+  status and a Revoke link (`delete_link`, confirm dialog built in). Below it a
+  `labelled_form_for` create form with name and the lifetime picker built from
+  `PersonalAccessToken.allowed_lifetimes`, 30 days preselected when allowed (D-006,
+  D-017); when the admin cap allows nothing, a warning replaces the form. The My
+  account sidebar partial is rendered as on the authorized-applications page, so
+  the legacy API key block is there unchanged (D-005).
+- How the plaintext is shown once (D-007, D-022): `create` saves, puts
+  `[plaintext]` (an Array) in `flash[:personal_access_token]` and redirects. The
+  controller's first `before_action`, `read_new_token_from_flash`, runs before
+  `require_login`, the REST API gate and sudo mode: it unwraps the value into
+  `@new_token_value` and deletes the flash key. `index` then renders a `div.box`
+  with the plaintext in `pre#new-personal-access-token`, the sidebar's copy button
+  markup (`data-controller="api-key-copy"`, reused as is) and sends
+  `Cache-Control: no-store`. The next request has no flash, so the list shows the
+  notice only. The Array wrapping means the layout's `render_flash_messages`, which
+  prints only String flash values, can never print the token even if an error page
+  is rendered before the callback; both cases are tested
+  (`test_new_token_should_never_be_rendered_as_flash_message`).
+- Access rules: `require_login`; 403 when the REST API is disabled
+  (`deny_access`); `require_sudo_mode :create, :destroy` (the confirmation page
+  keeps the posted fields as hidden inputs and re-posts them, tested end to end in
+  `sudo_mode_test.rb`); `destroy` finds only the current user's non-revoked tokens
+  and answers 404 otherwise, so revoked tokens behave as if gone (C-8); no
+  `accept_api_auth`, so a token cannot manage tokens. Mass assignment goes through
+  `safe_attributes` (`name`, `lifetime_days` only), tested with a POST that also
+  sends `expires_in`, `scopes`, `application_id` and `resource_owner_id`.
+- Deviations from the spec text: (1) `PersonalAccessToken.human_attribute_name`
+  added, see the 1.9 finding; without it "Expires in" never appears. (2)
+  `:required => true` is passed in the form builder's `options` hash for the
+  select, not in `html_options`: Redmine's `LabelledFormBuilder` consumes
+  `:required` to draw the asterisk in the label and never emits the HTML
+  attribute; in `html_options` Rails would add a blank option and browser
+  validation instead. Same effect as every other Redmine form. (3) `destroy`
+  rescues `RecordNotFound` into `render_404` inside the action, because Redmine
+  has no global rescue for it; the lookup stays after the sudo-mode check, as
+  spec 5.2 places it. A first version used a `find_token` filter declared before
+  `require_sudo_mode`, which answered 404 for unknown ids without the password
+  prompt (reviewer R-26); the sudo-mode test now pins the order.
+- Verified: 298 runs green across every touched test file; RuboCop clean;
+  `zeitwerk:check` green; `locales:check_interpolation` clean. Not verified in a
+  browser by the implementer (a login was required); the functional tests assert
+  the rendered HTML, including the copy button markup and the `no-store` header.
+- Known limits (documented for the README): session expiry between the POST and
+  the redirected GET loses the plaintext (C-2); the development error page's
+  session dump can show it in development/test only (C-14); the copy button
+  depends on the same Stimulus controller as the sidebar key.
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:

@@ -18,6 +18,14 @@ Amendments after approval:
 - 2026-09-08, D-028: section 9 gains a dedicated README item for the pre-existing
   nil-user bug in `find_current_user` (locked user with a valid OAuth token → 500),
   fixed in passing by the `if user` guard.
+- 2026-09-08, D-029 (human, after trying step 6): the empty token list shows a
+  specific sentence (`text_personal_access_token_none`) instead of `label_no_data`;
+  one functional test added (8.4). Folded into the step 6 commit (section 12), since
+  step 5 was already committed.
+- 2026-09-08, D-030 (reviewer R-27, step 6 review): `full_access?` additionally
+  requires `expires_in.present?`, so a foreign application-less token without expiry
+  and without scopes falls back to 6.1.2 behaviour instead of never-expiring full
+  access. Sections 3.2, 8.1, 8.3 and 9 amended.
 
 Owner: planner (`ai-workflow/roles/planner.md`). This document is the implementer's
 contract. Anything not covered here is a question to the human, not an improvisation.
@@ -160,7 +168,12 @@ Behaviour, all to be implemented in this class (Doorkeeper base class untouched)
   `where(:id => access_token.id).update_all(:last_used_at => Time.now)`. Mirrors
   `User#update_last_login_on!` (`user.rb:328-331`, D-013).
 - `self.full_access?(access_token)`: `access_token.application_id.nil? &&
-  access_token.scopes.all.empty?`. Used by `find_current_user`.
+  access_token.expires_in.present? && access_token.scopes.all.empty?`. Used by
+  `find_current_user`. The `expires_in` condition (D-030, reviewer R-27) restricts
+  full access to tokens that carry the mandatory expiry our model always sets; an
+  application-less token created outside this model (console, plugin, migration)
+  with no `expires_in` and no scopes keeps 6.1.2 behaviour: it authenticates with an
+  empty `oauth_scope` and can do nothing.
 
 Doorkeeper 5.8 documents app-owned extra columns on access tokens via the
 `custom_access_token_attributes` option (`config.rb:354`); we do not need the option
@@ -405,7 +418,10 @@ sudo mode in `configuration.yml`; it is a no-op otherwise and in tests (`arch 1.
    status `l(:label_personal_access_token_expired)` if `expired?` else
    `l(:label_personal_access_token_active)`, and `td.buttons` with
    `delete_link my_api_token_path(token), {}, l(:button_revoke)` (confirm dialog is
-   built in, `application_helper.rb:1600`). Empty list → `<p class="nodata"><%= l(:label_no_data) %></p>`.
+   built in, `application_helper.rb:1600`). Empty list →
+   `<p class="nodata"><%= l(:text_personal_access_token_none) %></p>` (D-029: a
+   specific sentence, not the generic "No data to display"; the `nodata` class is
+   kept, as `sudo_mode/new.html.erb:2` does with custom text).
 4. Create form, `labelled_form_for @token, :url => my_api_tokens_path` inside
    `fieldset.box.tabular` with legend `label_personal_access_token_new`:
    `error_messages_for @token`, `f.text_field :name, :required => true, :size => 40`,
@@ -452,10 +468,11 @@ notice_personal_access_token_created: Personal access token created. Copy it now
 notice_personal_access_token_revoked: Personal access token revoked.
 text_personal_access_token_shown_once: This is the only time the token will be shown. Store it in a safe place.
 text_personal_access_token_no_lifetime_available: No token lifetime is allowed by the administrator.
+text_personal_access_token_none: You have no personal access tokens yet. Create one below to access the REST API.
 setting_personal_access_token_max_lifetime: Maximum lifetime of personal access tokens
 ```
 
-Existing keys reused as is: `field_name`, `label_no_data`, `label_disabled` (lowercase
+Existing keys reused as is: `field_name`, `label_disabled` (lowercase
 "disabled", as on the authentication tab), `button_create`, `text_are_you_sure`,
 `datetime.distance_in_words.x_days`. Model attribute errors resolve via `field_<attr>`
 (`arch 1.9`), hence `field_lifetime_days`.
@@ -521,7 +538,11 @@ would obscure the tests.
 - `test_track_use_should_write_last_used_at_and_throttle`: nil → written; set to
   30 seconds ago → unchanged; set to 2 minutes ago → updated; an OAuth-flow token
   (with application) → never written.
-- `test_full_access_should_be_true_only_for_app_less_token_with_blank_scopes`.
+- `test_full_access_should_be_true_only_for_app_less_token_with_blank_scopes`: five
+  cases. True for an app-less token with `expires_in` and blank scopes. False for a
+  token with an application; for an app-less token with scopes; for a token with an
+  application and blank scopes; and (D-030) for an app-less token with blank scopes
+  **and `expires_in` nil**, created directly with `Doorkeeper::AccessToken.create!`.
 
 ### 8.2 Unit `test/unit/user_test.rb` (additions)
 
@@ -550,6 +571,12 @@ target `GET /users/current.xml` like `authentication_test.rb`:
   200 on an admin-only endpoint.
 - `test_pat_should_update_last_used_at`: nil before, present after one request.
 - `test_pat_should_be_refused_when_rest_api_disabled`: `with_settings(:rest_api_enabled => '0')` → 403.
+- `test_foreign_app_less_token_without_expiry_should_not_get_full_access` (D-030):
+  create `Doorkeeper::AccessToken.create!(:resource_owner_id => 1, :application_id => nil,
+  :expires_in => nil, :scopes => '')` for the admin, send it as Bearer:
+  `GET /users/current.xml` → 200 (it still authenticates, as in 6.1.2) but
+  `GET /users.xml` → 403 (empty scope, no admin), i.e. 6.1.2 behaviour, not full
+  access.
 - Parameter filtering is tested in upstream's `test/unit/lib/parameter_filtering_test.rb`
   (commit 2, D-025) plus our appended `bearer_token` case there; no duplicate here.
 
@@ -560,6 +587,9 @@ target `GET /users/current.xml` like `authentication_test.rb`:
 
 - `test_index_should_list_active_and_expired_but_not_revoked_tokens` (assert_select
   rows, suffix text, "Expired" label).
+- `test_index_without_tokens_should_show_specific_empty_message` (D-029):
+  `assert_select 'p.nodata', :text => /no personal access tokens/` and
+  `assert_select 'table.personal-access-tokens', 0`.
 - `test_index_should_require_login` (302 to login), `test_index_should_deny_when_rest_api_disabled` (403).
 - `test_index_should_show_create_form_with_allowed_lifetimes` and
   `..._with_cap` (`with_settings` 30 → options 7, 30 only), `..._without_form_when_no_lifetime_allowed`.
@@ -640,7 +670,11 @@ untouched; GitHub renders `README.md` on the fork's landing page. Contents:
   unaffected, C-12), the lost-token-on-session-expiry UX limit (C-2), the
   development-only error page session dump (C-14), and the
   official Doorkeeper `custom_access_token_attributes` hook as supporting evidence
-  that app-owned extra columns are an intended extension point (C-5).
+  that app-owned extra columns are an intended extension point (C-5), and the
+  boundary of the "blank scopes = full access" rule (D-030): it applies only to
+  application-less tokens that carry an expiry, which every token issued by our
+  model does; application-less tokens created by other means without an expiry keep
+  6.1.2 behaviour (they authenticate with an empty scope and can do nothing).
 - **Important items to discuss (D-015, D-024):** the user-deletion foreign-key fix
   is upstream's own #44343 fix from 6.1.4 applied to 6.1.2 (it disappears on rebase
   to 6.1.4+); the `filter_parameters` line is upstream's #44371 fix from 6.1.4 plus
@@ -728,7 +762,12 @@ None open. The critic may reopen any of the above with evidence.
 4. **Authentication** (4.1, 4.2, integration tests 8.3, `arch` note on the locked-user guard). D-010, D-012, D-013.
 5. **Admin API tab + `setting_*` i18n label + settings tests** (section 6 second block,
    8.6). The `settings.yml` declaration is already in step 3. D-008.
-6. **Self-service UI** (5.1-5.4, 8.4, 8.5, 8.7). D-005, D-006, D-007, D-014.
+6. **Self-service UI** (5.1-5.4, 8.4, 8.4a, 8.5, 8.7), **including the D-029 empty-state
+   change** (`text_personal_access_token_none` key, the view line, and
+   `test_index_without_tokens_should_show_specific_empty_message`): step 5 was already
+   committed when D-029 was decided, so the change is folded into this step's commit
+   rather than a follow-up, so that commits match the spec. D-005, D-006, D-007,
+   D-014, D-022, D-029.
 7. **Docs**: README section, `architecture.md` "What we built", `compose.yaml` header if commands changed.
 
 Commit messages: wiki format, reference #43881 (`conventions.md`, "Commits").
