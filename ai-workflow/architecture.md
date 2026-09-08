@@ -475,7 +475,7 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown steps 1 and 2 of 7 done** (spec section 12). Steps 3-7 not started.
+Status: **work breakdown steps 1 to 3 of 7 done** (spec section 12). Steps 4-7 not started.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
@@ -551,6 +551,59 @@ Status: **work breakdown steps 1 and 2 of 7 done** (spec section 12). Steps 3-7 
   `authentication_test.rb` and `disabled_rest_api_test.rb` unchanged and green.
 - Known limits: only Rails' own parameter logging is covered. `config/application.rb`
   is read at boot, so a running server needs a restart to pick the change up.
+
+### 2.3 Data model: migration, `PersonalAccessToken`, `User#personal_access_tokens` (step 3, D-009, D-010, D-011)
+
+- What: migration `db/migrate/20260908131111_add_personal_access_token_columns_to_oauth_access_tokens.rb`
+  adds three nullable columns to `oauth_access_tokens` (`name` string 255,
+  `last_used_at` datetime, `token_suffix` string 4). Model
+  `app/models/personal_access_token.rb`, a subclass of `Doorkeeper::AccessToken`.
+  `User` gets `has_many :personal_access_tokens` scoped to `application_id IS NULL`
+  (`user.rb:103-104`). `config/settings.yml:339` declares
+  `personal_access_token_max_lifetime` (int, default 0) because the model reads it;
+  the admin UI and its label follow in step 5. Test helper
+  `PersonalAccessToken.generate!` (`test/object_helpers.rb:23`), unit tests
+  `test/unit/personal_access_token_test.rb` (17 tests) and one association test in
+  `user_test.rb`.
+- How the token is made: Doorkeeper's `before_validation :generate_token` asks
+  `token_generator` for the random part; ours (`personal_access_token.rb:86`) returns
+  the nested `TokenGenerator` module (l.33) whose `generate` prepends `rmpat_` to
+  `UniqueToken.generate`, so the plaintext is 6 + 43 = 49 chars. The base
+  `generate_token` then stores `SHA256(plaintext)` (Redmine's `hash_token_secrets`)
+  and keeps the plaintext in memory as `#plaintext_token`; our override (l.96) adds
+  `token_suffix` from the last four plaintext chars for the list page. Lookup is
+  Doorkeeper's `by_token`, which hashes and does an indexed `find_by`.
+- How expiry is set: the form's `lifetime_days` is a virtual attribute. The writer
+  (l.61) normalises with `Integer(value, exception: false)`, so `''`, `'abc'`,
+  `'30abc'` become nil and fail the same `inclusion` validation (l.54) as 0, -1 or
+  45. `set_expiry` (l.92) converts an allowed value to `expires_in` seconds;
+  Doorkeeper's `expires_at` is `created_at + expires_in`. One error message per bad
+  lifetime, as C-6 asked; the tests assert on `errors[:lifetime_days]` because the
+  attribute label `field_lifetime_days` is added with the other locale keys in step 5.
+- Other behaviour: name unique per owner among non-revoked personal tokens,
+  case-insensitive (l.50), so a revoked token's name can be reused; `application_id`
+  must be absent; `track_use` (l.73) writes `last_used_at` with `update_all`, skips
+  application tokens and anything used less than a minute ago (D-013);
+  `full_access?` (l.82) is true only for an application-less token with blank
+  scopes (D-010). No refresh token: Doorkeeper's `use_refresh_token` attr is never set.
+- Why: D-010 (a PAT is an application-less Doorkeeper token, per the maintainer's
+  direction), D-011 (prefix and SHA-256 via Doorkeeper), D-009 (three columns; the
+  gem documents app-owned columns via `custom_access_token_attributes`).
+- Small deviations from the spec text, both convention-driven: the migration uses
+  `change_table ..., bulk: true` with the same three columns instead of three
+  `add_column` calls, because Redmine's RuboCop enforces `Rails/BulkChangeTable` on
+  new migrations (old ones are excluded by name in `.rubocop.yml:145-151`); it is
+  reversible, verified by `db:rollback` and re-migrate on both databases. The
+  `belongs_to :user` carries `:inverse_of => :personal_access_tokens` because
+  `Rails/InverseOf` demands it (`issue_query.rb:81` complies the same way).
+- Verified: `zeitwerk:check` "All is good!" with a top-level model subclassing a gem
+  model (C-9); `user_test.rb` 144 runs and `personal_access_token_test.rb` 17 runs
+  green; `token_test.rb`, `setting_test.rb`, `authentication_test.rb` unchanged and
+  green.
+- Known limits: no validation that `user` is present (Rails' `belongs_to` is optional
+  in Redmine, which does not set `belongs_to_required_by_default`); the controller
+  always sets the owner. `scopes` is stored as NULL, which Doorkeeper reads as an
+  empty scope list; blank and NULL are treated alike everywhere.
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:

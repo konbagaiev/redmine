@@ -20,6 +20,18 @@ module ObjectHelpers
     Member.create!(:principal => user, :project => project, :roles => roles)
   end
 
+  def PersonalAccessToken.generate!(attributes={})
+    @generated_token_name ||= +'token0'
+    @generated_token_name.succ!
+    token = PersonalAccessToken.new(attributes)
+    token.user = User.find(2) if token.user.nil?
+    token.name = @generated_token_name.dup if token.name.blank?
+    token.lifetime_days = 30 if token.lifetime_days.nil?
+    yield token if block_given?
+    token.save!
+    token
+  end
+
   def Group.generate!(attributes={})
     @generated_group_name ||= +'Group 0'
     @generated_group_name.succ!
