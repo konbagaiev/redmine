@@ -15,6 +15,9 @@ Amendments after approval:
   only `bearer_token`; the duplicate test in 8.3 is dropped.
 - 2026-09-08, D-027 (reviewer R-17): the `config/settings.yml` declaration moves from
   work-breakdown step 5 to step 3; the admin tab, its label and its tests stay in step 5.
+- 2026-09-08, D-028: section 9 gains a dedicated README item for the pre-existing
+  nil-user bug in `find_current_user` (locked user with a valid OAuth token → 500),
+  fixed in passing by the `if user` guard.
 
 Owner: planner (`ai-workflow/roles/planner.md`). This document is the implementer's
 contract. Anything not covered here is a question to the human, not an improvisation.
@@ -640,9 +643,20 @@ untouched; GitHub renders `README.md` on the fork's landing page. Contents:
   that app-owned extra columns are an intended extension point (C-5).
 - **Important items to discuss (D-015, D-024):** the user-deletion foreign-key fix
   is upstream's own #44343 fix from 6.1.4 applied to 6.1.2 (it disappears on rebase
-  to 6.1.4+); the locked-user `nil.oauth_scope=` guard; the `filter_parameters`
-  line is upstream's #44371 fix from 6.1.4 plus one `bearer_token` entry, so only
-  that entry survives a rebase (D-025).
+  to 6.1.4+); the `filter_parameters` line is upstream's #44371 fix from 6.1.4 plus
+  one `bearer_token` entry, so only that entry survives a rebase (D-025).
+- **Minor finding fixed in passing (D-028):** a pre-existing bug in
+  `ApplicationController#find_current_user` (6.1.2, `application_controller.rb:134-138`).
+  In the OAuth branch the user is loaded with `User.active.find_by_id(...)`, which
+  returns `nil` for a locked (status 3) or registered (status 2) user, and the next
+  line calls `user.oauth_scope = ...` unconditionally. A blocked user presenting a
+  still-valid OAuth access token therefore gets `NoMethodError` on `nil`, i.e. an
+  HTTP 500, instead of being refused. Our reordered branch (spec 4.2) wraps the scope
+  assignment and last-used tracking in `if user`, so the request now ends in 401 like
+  any other unauthenticated request. Covered by
+  `test_should_deny_pat_of_locked_user` (8.3), which fails with a 500 on the 6.1.2
+  code. Not reported upstream by us at the time of writing; the README says so, so a
+  maintainer can open a ticket or ask us to.
 - The AI workflow: pointer to `ai-workflow/`, the four roles, logs location, tools used.
 
 **`architecture.md` section 2 "What we built"**: owned by the implementer, one

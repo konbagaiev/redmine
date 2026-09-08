@@ -576,3 +576,24 @@ Format:
 - Consequences: commit 3 touches `config/settings.yml`; the reviewer checks that every
   step leaves the suite green in the stated order.
 - References: R-17 (reviewer report, separate session); spec 3.2, 6, 12; D-008
+
+## D-028: The README reports the pre-existing nil-user bug in `find_current_user` as a minor finding
+- Date: 2026-09-08
+- Decided by: human
+- Context: While reordering the API branch of `ApplicationController#find_current_user`
+  (spec 4.2) the planner noticed, and the critic confirmed (C-3 context), that 6.1.2
+  loads the OAuth user with `User.active.find_by_id` (nil for locked or registered
+  users) and then calls `user.oauth_scope=` unconditionally
+  (`application_controller.rb:134-138`). A blocked user with a still-valid OAuth token
+  gets a 500 instead of a 401. The spec's `if user` guard fixes it and
+  `test_should_deny_pat_of_locked_user` covers it, but the README plan only mentioned
+  the guard in passing inside the "important items" bullet.
+- Decision: The README gets a dedicated "minor finding fixed in passing" item that
+  states the mechanism, the trigger (blocked user, valid token), the symptom (500),
+  the fix (guard, now 401) and the test, and says it has not been reported upstream
+  by us, so maintainers can decide. Spec section 9 amended accordingly.
+- Alternatives considered: leaving it inside the "important items" list (too terse
+  for a behaviour change in the authentication path); filing an upstream ticket now
+  (the human's call, outside the planner's remit).
+- Consequences: README content only; no code or test change.
+- References: spec 4.2, 8.3, 9; `architecture.md` 1.3.1; D-021
