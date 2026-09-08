@@ -408,9 +408,11 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
   filter. There is no `config/initializers/filter_parameter_logging.rb`. Nothing in 6.1.2
   filters `key`, `X-Redmine-API-Key` or `access_token`. A PAT sent via `?key=` would be
   logged in plaintext by Rails' request log today. Upstream is handling this in #44371.
-  **Superseded by D-012 (2026-09-07):** we filter `key` and `bearer_token` ourselves now
-  (anchored regexes next to `:password`), and the README notes the overlap so
-  maintainers can drop whichever lands second.
+  **Superseded by D-012 (2026-09-07) and D-025 (2026-09-08):** #44371 landed as trunk
+  r24992, backported to 6.1-stable (ddd1ea49e) and released in 6.1.4:
+  `config.filter_parameters += [:password, :salt, :twofa_totp_key, /\Akey\z/]` plus
+  `test/unit/lib/parameter_filtering_test.rb`. We apply that fix verbatim on 6.1.2 and
+  add `/\Abearer_token\z/`; only the latter survives a rebase to 6.1.4+.
 
 ### 1.9 i18n
 
@@ -473,7 +475,7 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown step 1 of 7 done** (spec section 12). Steps 2-7 not started.
+Status: **work breakdown steps 1 and 2 of 7 done** (spec section 12). Steps 3-7 not started.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
@@ -512,6 +514,43 @@ Status: **work breakdown step 1 of 7 done** (spec section 12). Steps 2-7 not sta
 - Known limits: `test/system/oauth_provider_test.rb` cannot run in the Docker image
   (no Chrome installed); noted for the reviewer. When the branch is later rebased
   onto or merged with 6.1.4, this commit becomes a no-op rather than a conflict.
+
+### 2.2 Parameter filtering for `key` and `bearer_token` (step 2, D-012, D-016, D-025, backport of r24609 and r24992)
+
+- What: `config/application.rb:68` now reads
+  `config.filter_parameters += [:password, :salt, :twofa_totp_key, /\Akey\z/, /\Abearer_token\z/]`.
+  Everything up to `/\Akey\z/` is the 6.1.4 line, byte-identical: `:salt` and
+  `:twofa_totp_key` came with #43986 (r24609, 6.1-stable 2c933137b), the anchored
+  `key` with #44371 (r24992, 6.1-stable ddd1ea49e). `/\Abearer_token\z/` is ours.
+  Test: upstream's `test/unit/lib/parameter_filtering_test.rb` copied verbatim from
+  6.1.4 (five cases, `test "..."` style kept because it is an upstream file, D-025)
+  plus one appended case for `bearer_token`.
+- How: `filter_parameters` feeds `ActiveSupport::ParameterFilter`, which Rails runs
+  over request parameters before writing the `Parameters:` line of the request log
+  and before rendering the debug error page. Plain symbols such as `:password` match
+  as substrings (`sudo_password` is masked too, upstream tests this); a `Regexp` is
+  matched as written, so the `\A...\z` anchors keep `keywords` visible. Doorkeeper
+  already registers an anchored
+  `/^(client_secret|authentication_token|access_token|refresh_token|code)$/`
+  (`doorkeeper/engine.rb:5-11`); `bearer_token`, the third Doorkeeper transport, is
+  in neither list, hence our entry. Rails applies a pattern to the leaf name at every
+  nesting depth, so a nested `issue[key]` would be masked as well; Redmine has no such
+  parameter, and Doorkeeper's filter behaves the same way.
+- Why: the legacy `?key=` transport and Doorkeeper's `?bearer_token=` transport put a
+  secret in the query string, which Rails logs unless filtered. Shipped as two
+  commits, like step 1: the upstream files verbatim as a backport, then the
+  `bearer_token` entry, its test case and this note, so only the second commit
+  survives a rebase onto 6.1.4 (D-025). Headers are never logged by Rails; reverse
+  proxies logging query strings are outside Redmine's control (D-016), which the
+  README states.
+- Verified: unit test green (6 runs, 7 assertions); the backport commit's two files
+  have the same git blob hashes as at tag 6.1.4. After restarting the dev server,
+  `GET /users/current.json?key=SECRET...&keywords=plain` and `?bearer_token=SECRET...`
+  produced `"key"=>"[FILTERED]"`, `"bearer_token"=>"[FILTERED]"`, `"keywords"=>"plain"`
+  in `log/development.log`, and no `SECRET` string anywhere in the log. Legacy
+  `authentication_test.rb` and `disabled_rest_api_test.rb` unchanged and green.
+- Known limits: only Rails' own parameter logging is covered. `config/application.rb`
+  is read at boot, so a running server needs a restart to pick the change up.
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:

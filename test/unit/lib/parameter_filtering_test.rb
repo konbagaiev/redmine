@@ -45,4 +45,8 @@ class ParameterFilteringTest < ActiveSupport::TestCase
   test "parameters merely containing key should not be over-filtered" do
     assert_equal 'fixes', filter('keywords' => 'fixes')['keywords']
   end
+
+  test "the bearer_token parameter should be filtered from logs" do
+    assert_equal '[FILTERED]', filter('bearer_token' => 'secret')['bearer_token']
+  end
 end
