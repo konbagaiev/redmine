@@ -208,5 +208,9 @@ class PersonalAccessTokenTest < ActiveSupport::TestCase
       Doorkeeper::AccessToken.create!(:resource_owner_id => 2, :application_id => nil,
                                       :scopes => 'view_issues', :expires_in => 3600)
     )
+    # no application, no scopes, but no expiry either: not created by this model
+    assert !PersonalAccessToken.full_access?(
+      Doorkeeper::AccessToken.create!(:resource_owner_id => 2)
+    )
   end
 end

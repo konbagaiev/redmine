@@ -142,6 +142,21 @@ class Redmine::ApiTest::PersonalAccessTokenAuthenticationTest < Redmine::ApiTest
     assert_response :forbidden
   end
 
+  def test_foreign_app_less_token_without_expiry_should_not_get_full_access
+    # created outside PersonalAccessToken: no application, no scopes, no expiry
+    token = Doorkeeper::AccessToken.create!(:resource_owner_id => 1)
+    headers = {'HTTP_AUTHORIZATION' => "Bearer #{token.plaintext_token}"}
+
+    # it still authenticates, as in 6.1.2 ...
+    get '/users/current.xml', :headers => headers
+    assert_response :ok
+    assert_select 'user login', :text => 'admin'
+
+    # ... but with an empty scope: no admin rights, no full access
+    get '/users.xml', :headers => headers
+    assert_response :forbidden
+  end
+
   def test_pat_should_update_last_used_at
     assert_nil @token.last_used_at
 

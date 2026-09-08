@@ -92,9 +92,13 @@ class PersonalAccessToken < Doorkeeper::AccessToken
   end
 
   # An application-less token with no scopes grants the owner's full rights,
-  # exactly like the legacy API key
+  # exactly like the legacy API key. A token without expiry is never full
+  # access, whatever created it: every token issued here carries one, and a
+  # row made elsewhere keeps Doorkeeper's scoped behaviour
   def self.full_access?(access_token)
-    access_token.application_id.nil? && access_token.scopes.all.empty?
+    access_token.application_id.nil? &&
+      access_token.expires_in.present? &&
+      access_token.scopes.all.empty?
   end
 
   def token_generator
