@@ -1463,3 +1463,20 @@ en:
     one: "1 other"
     other: "%{count} others"
   setting_personal_access_token_max_lifetime: Maximum lifetime of personal access tokens
+  label_personal_access_token: Personal access token
+  label_personal_access_token_plural: Personal access tokens
+  label_personal_access_token_new: New personal access token
+  label_personal_access_token_active: Active
+  label_personal_access_token_expired: Expired
+  label_personal_access_token_last_used: "used %{value} ago"
+  label_never: Never
+  field_lifetime_days: Expires in
+  field_expires_at: Expires on
+  field_last_used_at: Last used
+  field_token_suffix: Token
+  button_revoke: Revoke
+  notice_personal_access_token_created: Personal access token created. Copy it now, it will not be shown again.
+  notice_personal_access_token_revoked: Personal access token revoked.
+  text_personal_access_token_shown_once: This is the only time the token will be shown. Store it in a safe place.
+  text_personal_access_token_no_lifetime_available: No token lifetime is allowed by the administrator.
+  text_personal_access_token_none: You have no personal access tokens yet. Create one below to access the REST API.

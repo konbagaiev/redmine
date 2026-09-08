@@ -62,6 +62,20 @@ class PersonalAccessToken < Doorkeeper::AccessToken
     @lifetime_days = Integer(value, exception: false)
   end
 
+  # Doorkeeper::AccessToken descends from ActiveRecord::Base, not from
+  # ApplicationRecord, so Redmine's field_<attr> label lookup is repeated here
+  # (app/models/application_record.rb)
+  def self.human_attribute_name(attr, options={})
+    prepared_attr = attr.to_s.sub(/_id$/, '').sub(/^.+\./, '')
+    class_prefix = name.underscore.tr('/', '_')
+    redmine_default = [
+      :"field_#{class_prefix}_#{prepared_attr}",
+      :"field_#{prepared_attr}"
+    ]
+    options[:default] = redmine_default + Array(options[:default])
+    super
+  end
+
   # Lifetimes an owner may choose, capped by the admin setting (0 = no cap)
   def self.allowed_lifetimes
     cap = Setting.personal_access_token_max_lifetime.to_i

@@ -1,0 +1,75 @@
+<%= title [l(:label_my_account), my_account_path], l(:label_personal_access_token_plural) %>
+
+<% if @new_token_value %>
+<div class="box" data-controller="api-key-copy">
+  <p>
+    <%= l(:text_personal_access_token_shown_once) %>
+    <a class="copy-api-key-link icon icon-only"
+       title="<%= l(:button_copy) %>"
+       aria-label="<%= l(:button_copy) %>"
+       href="#"
+       role="button"
+       tabindex="0"
+       data-action="click->api-key-copy#copy">
+      <%= sprite_icon('copy') %>
+    </a>
+  </p>
+  <pre id="new-personal-access-token" class="autoscroll" data-api-key-copy-target="apiKey"><%= @new_token_value %></pre>
+</div>
+<% end %>
+
+<% if @tokens.any? %>
+<div class="autoscroll">
+<table class="list personal-access-tokens">
+  <thead><tr>
+    <th><%= l(:field_name) %></th>
+    <th><%= l(:field_token_suffix) %></th>
+    <th><%= l(:field_created_on) %></th>
+    <th><%= l(:field_expires_at) %></th>
+    <th><%= l(:field_last_used_at) %></th>
+    <th><%= l(:field_status) %></th>
+    <th></th>
+  </tr></thead>
+  <tbody>
+  <% @tokens.each do |token| %>
+    <tr id="personal-access-token-<%= token.id %>" class="<%= cycle("odd", "even") %>">
+      <td class="name"><%= token.name %></td>
+      <td><code>&hellip;<%= token.token_suffix %></code></td>
+      <td><%= format_time(token.created_at) %></td>
+      <td><%= format_time(token.expires_at) %></td>
+      <td><%= token.last_used_at ? l(:label_personal_access_token_last_used, distance_of_time_in_words(Time.now, token.last_used_at)) : l(:label_never) %></td>
+      <td class="status"><%= token.expired? ? l(:label_personal_access_token_expired) : l(:label_personal_access_token_active) %></td>
+      <td class="buttons"><%= delete_link my_api_token_path(token), {}, l(:button_revoke) %></td>
+    </tr>
+  <% end %>
+  </tbody>
+</table>
+</div>
+<% else %>
+<p class="nodata"><%= l(:text_personal_access_token_none) %></p>
+<% end %>
+
+<% lifetimes = PersonalAccessToken.allowed_lifetimes %>
+<% if lifetimes.any? %>
+<%= labelled_form_for @token, :url => my_api_tokens_path do |f| %>
+<fieldset class="box tabular">
+  <legend><%= l(:label_personal_access_token_new) %></legend>
+  <%= error_messages_for @token %>
+  <p><%= f.text_field :name, :required => true, :size => 40 %></p>
+  <p><%= f.select :lifetime_days,
+                  lifetimes.collect {|days| [l('datetime.distance_in_words.x_days', :count => days), days]},
+                  {:selected => @token.lifetime_days || (lifetimes.include?(30) ? 30 : lifetimes.first),
+                   :required => true} %></p>
+</fieldset>
+<%= submit_tag l(:button_create) %>
+<% end %>
+<% else %>
+<p class="warning"><%= l(:text_personal_access_token_no_lifetime_available) %></p>
+<% end %>
+
+<% content_for :sidebar do %>
+<% @user = User.current %>
+<%= render :partial => 'my/sidebar' %>
+<% end %>
+
+<% html_title(l(:label_personal_access_token_plural)) -%>
