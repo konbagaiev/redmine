@@ -554,3 +554,25 @@ Format:
   other roles include a "proposed decision entry" section in their report when they
   think one is needed.
 - References: D-018, D-024, D-025
+
+## D-027: The settings.yml declaration belongs to work-breakdown step 3, not step 5
+- Date: 2026-09-08
+- Decided by: human (reviewer finding R-17)
+- Context: Spec section 12 put the whole of section 6 (setting declaration, admin API
+  tab, i18n label, settings tests) in step 5, after the model in step 3. But
+  `PersonalAccessToken.allowed_lifetimes` (spec 3.2) reads
+  `Setting.personal_access_token_max_lifetime`, and `Setting` generates that accessor
+  only from `config/settings.yml` (`Setting.load_available_settings`,
+  `architecture.md` 1.5). Built in the spec's order, step 3 raises `NoMethodError` and
+  its cap-related unit tests cannot pass, so step 3 would not leave the tests green.
+- Decision: The `config/settings.yml` declaration (`personal_access_token_max_lifetime`,
+  `format: int`, `default: 0`, `security_notifications: 1`) is part of step 3, in the
+  same commit as the migration and model. Step 5 keeps the admin API tab select, the
+  `setting_personal_access_token_max_lifetime` label and the settings controller
+  tests. Section 12 amended; sections 3.2 and 6 are unchanged.
+- Alternatives considered: guarding the model with `Setting.respond_to?` (hides a
+  configuration error); reordering steps 3 and 5 entirely (the admin UI has no
+  meaning before the model exists).
+- Consequences: commit 3 touches `config/settings.yml`; the reviewer checks that every
+  step leaves the suite green in the stated order.
+- References: R-17 (reviewer report, separate session); spec 3.2, 6, 12; D-008

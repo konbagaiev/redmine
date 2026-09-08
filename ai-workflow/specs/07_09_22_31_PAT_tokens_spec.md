@@ -13,6 +13,8 @@ Amendments after approval:
 - 2026-09-08, D-025: section 4.3 now applies upstream's #44371 fix from 6.1.4
   verbatim (`salt`, `twofa_totp_key`, anchored `key`, upstream test file) and adds
   only `bearer_token`; the duplicate test in 8.3 is dropped.
+- 2026-09-08, D-027 (reviewer R-17): the `config/settings.yml` declaration moves from
+  work-breakdown step 5 to step 3; the admin tab, its label and its tests stay in step 5.
 
 Owner: planner (`ai-workflow/roles/planner.md`). This document is the implementer's
 contract. Anything not covered here is a question to the human, not an improvisation.
@@ -701,9 +703,17 @@ None open. The critic may reopen any of the above with evidence.
    `test/unit/lib/parameter_filtering_test.rb` plus one appended case). Commit message
    references #43881 and #44371 and says it is the 6.1.4 fix applied to 6.1.2.
    D-012, D-025.
-3. **Migration + model + object helper + unit tests** (3.1, 3.2, 8.1, `User#personal_access_tokens`). D-009, D-010, D-011.
+3. **Migration + model + object helper + unit tests** (3.1, 3.2, 8.1,
+   `User#personal_access_tokens`), **including the setting declaration in
+   `config/settings.yml`** (section 6, first block) because
+   `PersonalAccessToken.allowed_lifetimes` reads
+   `Setting.personal_access_token_max_lifetime`, and `Setting` only defines that
+   accessor from the YAML (`arch 1.5`): without it the model raises `NoMethodError`
+   and the unit tests in 8.1 that exercise the cap cannot run (R-17, D-027).
+   D-008, D-009, D-010, D-011.
 4. **Authentication** (4.1, 4.2, integration tests 8.3, `arch` note on the locked-user guard). D-010, D-012, D-013.
-5. **Setting + admin API tab + i18n + tests** (6, 8.6). D-008.
+5. **Admin API tab + `setting_*` i18n label + settings tests** (section 6 second block,
+   8.6). The `settings.yml` declaration is already in step 3. D-008.
 6. **Self-service UI** (5.1-5.4, 8.4, 8.5, 8.7). D-005, D-006, D-007, D-014.
 7. **Docs**: README section, `architecture.md` "What we built", `compose.yaml` header if commands changed.
 
