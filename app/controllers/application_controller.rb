@@ -128,14 +128,16 @@ class ApplicationController < ActionController::Base
       end
     end
     if user.nil? && Setting.rest_api_enabled? && accept_api_auth?
-      if (key = api_key_from_request)
-        # Use API key
-        user = User.find_by_api_key(key)
-      elsif access_token = Doorkeeper.authenticate(request)
-        # Oauth
+      if (key = api_key_from_request) && (user = User.find_by_api_key(key))
+        # Legacy API key
+      elsif (access_token = Doorkeeper.authenticate(request))
+        # OAuth access token or personal access token
         if access_token.accessible?
           user = User.active.find_by_id(access_token.resource_owner_id)
-          user.oauth_scope = access_token.scopes.all.map(&:to_sym)
+          if user
+            user.oauth_scope = access_token.scopes.all.map(&:to_sym) unless PersonalAccessToken.full_access?(access_token)
+            PersonalAccessToken.track_use(access_token)
+          end
         else
           doorkeeper_render_error
         end

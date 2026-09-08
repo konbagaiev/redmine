@@ -239,6 +239,68 @@ class SudoModeTest < Redmine::IntegrationTest
     assert_equal 'even.newer.mail@test.com', User.find_by_login('jsmith').mail
   end
 
+  def test_create_personal_access_token
+    with_settings :rest_api_enabled => '1' do
+      log_user 'jsmith', 'jsmith'
+      expire_sudo_mode!
+      get '/my/api_tokens'
+      assert_response :success
+
+      # no password
+      assert_no_difference 'PersonalAccessToken.count' do
+        post '/my/api_tokens', :params => {:personal_access_token => {:name => 'cron', :lifetime_days => '30'}}
+      end
+      assert_response :success
+      assert_select 'h2', 'Confirm your password to continue'
+      assert_select 'form[action="/my/api_tokens"]'
+      assert_select 'input[type=hidden][name=?][value=?]', 'personal_access_token[name]', 'cron'
+      assert_select '#flash_error', 0
+
+      # wrong password
+      assert_no_difference 'PersonalAccessToken.count' do
+        post '/my/api_tokens', :params => {:personal_access_token => {:name => 'cron', :lifetime_days => '30'},
+                                          :sudo_password => 'wrong'}
+      end
+      assert_response :success
+      assert_select 'h2', 'Confirm your password to continue'
+      assert_select '#flash_error'
+
+      # correct password
+      assert_difference 'PersonalAccessToken.count' do
+        post '/my/api_tokens', :params => {:personal_access_token => {:name => 'cron', :lifetime_days => '30'},
+                                          :sudo_password => 'jsmith'}
+      end
+      assert_redirected_to '/my/api_tokens'
+      token = PersonalAccessToken.personal.order(:id).last
+      assert_equal 'cron', token.name
+
+      # sudo mode is now active: revoking needs no password
+      delete "/my/api_tokens/#{token.id}"
+      assert_redirected_to '/my/api_tokens'
+      assert_not_nil token.reload.revoked_at
+    end
+  end
+
+  def test_revoke_personal_access_token
+    with_settings :rest_api_enabled => '1' do
+      token = PersonalAccessToken.generate!(:user => User.find(2))
+      log_user 'jsmith', 'jsmith'
+      expire_sudo_mode!
+
+      delete "/my/api_tokens/#{token.id}"
+      assert_response :success
+      assert_select 'h2', 'Confirm your password to continue'
+      assert_select 'form[action=?]', "/my/api_tokens/#{token.id}"
+      assert_nil token.reload.revoked_at
+
+      # the token is looked up after the sudo-mode check, so an unknown id is
+      # challenged the same way instead of revealing a 404
+      delete '/my/api_tokens/999999'
+      assert_response :success
+      assert_select 'h2', 'Confirm your password to continue'
+    end
+  end
+
   def test_sudo_mode_should_skip_api_requests
     with_settings :rest_api_enabled => '1' do
       assert_difference('User.count') do

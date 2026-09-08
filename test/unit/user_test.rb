@@ -400,6 +400,41 @@ class UserTest < ActiveSupport::TestCase
     assert_nil Token.find_by_id(token.id)
   end
 
+  def test_destroy_should_delete_oauth_access_tokens_and_grants
+    application = Doorkeeper::Application.create!(
+      :name => 'Test app', :redirect_uri => 'https://example.com/callback', :scopes => ''
+    )
+    personal_token = Doorkeeper::AccessToken.create!(
+      :resource_owner_id => 2, :application_id => nil, :expires_in => 3600
+    )
+    application_token = Doorkeeper::AccessToken.create!(
+      :resource_owner_id => 2, :application => application, :expires_in => 3600
+    )
+    grant = Doorkeeper::AccessGrant.create!(
+      :resource_owner_id => 2, :application => application, :expires_in => 600,
+      :redirect_uri => 'https://example.com/callback'
+    )
+
+    User.find(2).destroy
+    assert_nil User.find_by_id(2)
+    assert_nil Doorkeeper::AccessToken.find_by_id(personal_token.id)
+    assert_nil Doorkeeper::AccessToken.find_by_id(application_token.id)
+    assert_nil Doorkeeper::AccessGrant.find_by_id(grant.id)
+    assert Doorkeeper::Application.find_by_id(application.id)
+  end
+
+  def test_personal_access_tokens_association_should_exclude_application_tokens
+    application = Doorkeeper::Application.create!(
+      :name => 'Test app', :redirect_uri => 'https://example.com/callback', :scopes => ''
+    )
+    Doorkeeper::AccessToken.create!(
+      :resource_owner_id => 2, :application => application, :expires_in => 3600
+    )
+    personal_token = PersonalAccessToken.generate!(:user => User.find(2))
+
+    assert_equal [personal_token.id], User.find(2).personal_access_tokens.ids
+  end
+
   def test_destroy_should_delete_watchers
     issue = Issue.create!(:project_id => 1, :author_id => 1,
                           :tracker_id => 1, :subject => 'foo')

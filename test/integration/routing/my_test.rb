@@ -42,4 +42,10 @@ class RoutingMyTest < Redmine::RoutingTest
     should_route 'POST /my/remove_block' => 'my#remove_block'
     should_route 'POST /my/order_blocks' => 'my#order_blocks'
   end
+
+  def test_my_api_tokens
+    should_route 'GET /my/api_tokens' => 'personal_access_tokens#index'
+    should_route 'POST /my/api_tokens' => 'personal_access_tokens#create'
+    should_route 'DELETE /my/api_tokens/1' => 'personal_access_tokens#destroy', :id => '1'
+  end
 end

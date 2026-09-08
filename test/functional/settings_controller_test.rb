@@ -66,6 +66,27 @@ class SettingsControllerTest < Redmine::ControllerTest
     assert_response :success
   end
 
+  def test_api_tab_should_show_personal_access_token_max_lifetime_select
+    get :edit
+    assert_response :success
+
+    assert_select 'select[name=?]', 'settings[personal_access_token_max_lifetime]' do
+      assert_select 'option', 7
+      assert_select 'option[value="0"]', :text => 'disabled'
+      assert_select 'option[value="7"]', :text => '7 days'
+      assert_select 'option[value="365"]', :text => '365 days'
+    end
+  end
+
+  def test_post_edit_should_save_personal_access_token_max_lifetime
+    with_settings :personal_access_token_max_lifetime => 0 do
+      post :edit, :params => {:settings => {:personal_access_token_max_lifetime => '30'}}
+      assert_redirected_to '/settings'
+      assert_equal '30', Setting.personal_access_token_max_lifetime
+      assert_equal [7, 30], PersonalAccessToken.allowed_lifetimes
+    end
+  end
+
   def test_post_edit_notifications
     post :edit, :params => {
       :settings => {

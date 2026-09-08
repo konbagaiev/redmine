@@ -24,6 +24,22 @@ class MyControllerTest < Redmine::ControllerTest
     @request.session[:user_id] = 2
   end
 
+  def test_account_should_link_to_personal_access_tokens_when_rest_api_enabled
+    with_settings :rest_api_enabled => '1' do
+      get :account
+      assert_response :success
+      assert_select 'div.contextual a[href=?]', '/my/api_tokens', :text => 'Personal access tokens'
+    end
+  end
+
+  def test_account_should_not_link_to_personal_access_tokens_when_rest_api_disabled
+    with_settings :rest_api_enabled => '0' do
+      get :account
+      assert_response :success
+      assert_select 'a[href=?]', '/my/api_tokens', 0
+    end
+  end
+
   def test_index
     get :index
     assert_response :success
