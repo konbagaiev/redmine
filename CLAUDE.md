@@ -70,10 +70,17 @@ Rules of the pipeline:
 - Roles do not launch other roles. The human starts each role in a separate session
   and carries the hand-over between them. If a role thinks the next role should run,
   it says so in its closing summary and stops.
+- **Only the planner writes the spec and `decisions.md`.** The critic, implementer and
+  reviewer never edit either file, and neither does any session that is not running
+  the planner role, including a session where the human merely approves something.
+  Anything that should change a spec or become a decision (an accepted finding, an
+  approval, an amendment, a reversal) is brought to a planner session, and the planner
+  records it. Other roles may *propose* a decision entry in their report.
 - The planner works **with** the human, not for them. It asks questions and proposes
-  options; the human decides. Each decision is appended to `decisions.md`.
+  options; the human decides. Each decision is appended to `decisions.md` by the
+  planner.
 - The critic never edits the plan. It produces findings. The human and planner decide
-  which findings to accept, and record that in `decisions.md`.
+  which findings to accept, and the planner records that in `decisions.md`.
 - The implementer builds **only** what the spec says. Anything the spec does not cover
   is a question back to the human, not an improvisation.
 - The reviewer checks the implementation against the spec and against Redmine's
@@ -95,12 +102,14 @@ starting, and updates only the ones its role owns.
   creation time (day_month_hour_minute), the slug names the feature; the file is never
   renamed afterwards. The human names the spec when starting a role session ("act as
   critic on specs/07_09_22_31_PAT_tokens_spec.md"); if not named, the newest file in
-  `specs/` is the current one. Owned by the planner. Describes what we
+  `specs/` is the current one. Owned and **written by the planner only**; every
+  other role reads it. Describes what we
   build, scope boundaries, data model, API surface, UI, tests, and acceptance criteria.
   This is the implementer's contract.
-- **`decisions.md`** — **append-only** decision log. Never edit or delete an entry. Each
-  entry has an ID (`D-NNN`), date, context, decision, alternatives considered, and who
-  decided. If a decision is reversed, append a new entry that supersedes the old one.
+- **`decisions.md`** — **append-only** decision log, **written by the planner only**.
+  Never edit or delete an entry. Each entry has an ID (`D-NNN`), date, context,
+  decision, alternatives considered, and who decided. If a decision is reversed, append
+  a new entry that supersedes the old one.
 - **`architecture.md`** — living description of what we found in Redmine that matters
   for this task, and what we built, how, and why. Owned by the implementer for the
   "built" part and by whoever does the investigation for the "findings" part.

@@ -82,7 +82,8 @@ idioms are wrong here when they differ.
 - If you discover something about Redmine that the spec got wrong, do **not** silently
   work around it. Record the finding under "Findings about Redmine" in
   `architecture.md`, tell the human, and wait for a decision. If a decision is made,
-  the human or planner appends it to `decisions.md`.
+  the human takes it to a planner session and the planner appends it to `decisions.md`
+  and amends the spec; you never edit either file.
 
 - **Iteration limit.** If the reviewer has already returned two reviews of this work
   and a third implementer/reviewer round would be needed, stop. Report to the human
@@ -91,8 +92,9 @@ idioms are wrong here when they differ.
 
 ## What you do not write
 
-- the spec (planner owns it) and `decisions.md` (append-only, recorded by the human or
-  planner after a decision). You may *propose* a decision entry in your report.
+- the spec and `decisions.md`: **written by the planner only**. You may *propose* a
+  decision entry or a spec amendment in your report; the human carries it to a planner
+  session.
 
 ## Reporting
 

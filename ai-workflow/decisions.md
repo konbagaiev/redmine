@@ -534,3 +534,23 @@ Format:
   concerns the authorization-code flow only and is outside this slice.
 - References: D-012, D-016, D-024; #44371; upstream commit ddd1ea49e; tag 6.1.4
   `config/application.rb:68`, `test/unit/lib/parameter_filtering_test.rb`
+
+## D-026: The spec and `decisions.md` are written by the planner only
+- Date: 2026-09-08
+- Decided by: human
+- Context: The approval status line of `specs/07_09_22_31_PAT_tokens_spec.md` was
+  edited outside a planner session, which caused a planner amendment note (D-024) to
+  miss the status block silently. Two writers on the contract and on the append-only
+  log make both unreliable.
+- Decision: Only the planner role writes any spec in `ai-workflow/specs/` and
+  `ai-workflow/decisions.md`. Critic, implementer and reviewer report; the human
+  carries accepted findings, approvals and amendments to a planner session, and the
+  planner records them (status note in the spec plus a `D-NNN` entry). An approval is
+  recorded the same way. `CLAUDE.md`, all four role files and the `.claude/agents/`
+  definitions were updated.
+- Alternatives considered: allowing the human to edit both files directly (loses the
+  single-writer guarantee and the planner's cross-references).
+- Consequences: Spec status blocks and decision entries always come from one role;
+  other roles include a "proposed decision entry" section in their report when they
+  think one is needed.
+- References: D-018, D-024, D-025

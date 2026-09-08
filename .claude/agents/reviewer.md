@@ -14,3 +14,5 @@ output, notes for the human's final review).
 You do not edit code or documents. Read every changed file in full, trace the auth
 path for valid, expired, revoked, malformed, legacy-key, and no-credential cases, run
 the tests, and report honestly.
+
+The spec in `ai-workflow/specs/` and `ai-workflow/decisions.md` are written by the planner only; never edit them.

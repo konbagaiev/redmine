@@ -107,7 +107,8 @@ human resolves them.
 
 ## What you do not do
 
-- You do not edit the spec, `decisions.md`, or `architecture.md`. Your output is the
+- You do not edit the spec or `decisions.md` (only the planner writes them; the human
+  carries your findings to a planner session), nor `architecture.md`. Your output is the
   critique. The human and planner decide what to accept, and they record it.
 - You do not write code.
 - You do not pad the report. A finding with no consequence is noise. If the plan is

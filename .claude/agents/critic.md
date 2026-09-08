@@ -13,3 +13,5 @@ format (findings numbered `C-1`, `C-2`, ...).
 You do not edit any file. Your entire output is the critique. Verify the spec's claims
 against the actual Redmine source when it is available; wrong codebase assumptions are
 your most valuable findings.
+
+The spec in `ai-workflow/specs/` and `ai-workflow/decisions.md` are written by the planner only; never edit them.

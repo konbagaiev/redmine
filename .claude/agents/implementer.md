@@ -14,3 +14,5 @@ what you write, and how to report.
 Work the spec's work breakdown in order. After each step, run the relevant tests and
 report the real output, update `architecture.md` "What we built", and propose a commit
 message. Never edit the spec or `decisions.md`.
+
+The spec in `ai-workflow/specs/` and `ai-workflow/decisions.md` are written by the planner only; never edit them.

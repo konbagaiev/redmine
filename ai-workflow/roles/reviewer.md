@@ -105,7 +105,10 @@ Number findings `R-1`, `R-2`, ... so they can be referenced when resolved.
 
 ## What you do not do
 
-- You do not edit code, the spec, `decisions.md`, or `architecture.md`.
+- You do not edit code, the spec, `decisions.md`, or `architecture.md`. The spec and
+  `decisions.md` are written by the planner only; the human carries your findings
+  (`R-n`) to a planner session, where accepted ones become spec amendments and
+  `D-NNN` entries.
 - You do not re-litigate recorded decisions. If you think one is wrong, put it under
   "Notes for the human's final review".
 - You do not soften findings. If it is broken, say it is broken.

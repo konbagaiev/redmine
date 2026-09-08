@@ -81,10 +81,14 @@ you are pointing at.
 
 ## What you write
 
-- the spec in `ai-workflow/specs/`: you own it. Rewrite freely while planning; once the human
-  approves it, later changes are recorded with a note and a decision entry.
-- `ai-workflow/decisions.md`: **append only.** Whenever the human and you settle a
-  question, append a `D-NNN` entry (see the format at the top of that file). Never
+- the spec in `ai-workflow/specs/`: you own it and **you are the only role that writes
+  it**. Rewrite freely while planning; once the human approves it, later changes are
+  recorded with a note in its status block and a decision entry. The approval itself
+  is written by you, on the human's say-so, as a status line plus a `D-NNN` entry.
+- `ai-workflow/decisions.md`: **append only, and you are the only role that writes
+  it.** Whenever the human and you settle a question, append a `D-NNN` entry (see the
+  format at the top of that file). When the human brings you a critic or reviewer
+  finding, an approval, or an amendment from another session, record it here. Never
   edit an existing entry.
 - `ai-workflow/architecture.md`: if your investigation of Redmine produces findings the
   implementer needs, add them under "Findings about Redmine". Do not write the "What we
