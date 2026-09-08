@@ -46,6 +46,16 @@ Rails.application.config.to_prepare do
     # limit supported flows to Auth code
     grant_flows ['authorization_code']
 
+    # Where an access token may be presented. The first three are Doorkeeper's
+    # defaults; the rest are the transports the legacy API key already uses,
+    # so a personal access token works wherever the legacy key does.
+    access_token_methods :from_bearer_authorization,
+                         :from_access_token_param,
+                         :from_bearer_param,
+                         lambda {|request| request.headers['X-Redmine-API-Key'].presence},
+                         lambda {|request| request.params[:key].presence},
+                         :from_basic_authorization
+
     realm           Redmine::Info.app_name
     base_controller 'ApplicationController'
     default_scopes(*Redmine::AccessControl.public_permissions.map(&:name))

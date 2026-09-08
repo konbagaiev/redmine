@@ -254,6 +254,17 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
   must delete them there, which also fixes it for OAuth tokens. Fixed upstream as
   #44343 (r24916, backported to 6.1-stable in r24939, released in 6.1.4); our branch
   carries that fix as its first commit (section 2.1).
+- **Latent 500 for locked OAuth users (found in step 4, fixed by the guard the spec
+  asked for):** in 6.1.2 `find_current_user` did
+  `user = User.active.find_by_id(...)` and then `user.oauth_scope = ...` with no nil
+  check (`application_controller.rb:136-137` at 6.1.2), so a valid, unexpired
+  Doorkeeper token of a locked or registered user raised `NoMethodError` on
+  `nil.oauth_scope=`. Reproduced by running
+  `test_should_deny_pat_of_locked_user` with the step-4 controller change stashed:
+  "Expected response to be a <401>, but was a <500>". With the `if user` guard the
+  request is a plain 401. Pre-existing OAuth behaviour, not PAT-specific; listed in
+  the README "important items". Not found in the 6.1.3/6.1.4 diffs of
+  `application_controller.rb`, so not an upstream backport.
 - Doorkeeper's own endpoints and `access_token_methods`: `GET /oauth/token/info`
   resolves its token with `OAuth::Token.authenticate(request, *access_token_methods)`
   (`doorkeeper/rails/helpers.rb:72-76`), so any transport we add there applies to it
@@ -475,7 +486,7 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown steps 1 to 3 of 7 done** (spec section 12). Steps 4-7 not started.
+Status: **work breakdown steps 1 to 4 of 7 done** (spec section 12). Steps 5-7 not started.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
@@ -604,6 +615,50 @@ Status: **work breakdown steps 1 to 3 of 7 done** (spec section 12). Steps 4-7 n
   in Redmine, which does not set `belongs_to_required_by_default`); the controller
   always sets the owner. `scopes` is stored as NULL, which Doorkeeper reads as an
   empty scope list; blank and NULL are treated alike everywhere.
+
+### 2.4 Authentication: transports and `find_current_user` (step 4, D-010, D-012, D-013)
+
+- What: `config/initializers/30-redmine.rb:52-57` configures Doorkeeper's
+  `access_token_methods` with its three defaults followed by the legacy transports
+  (`X-Redmine-API-Key` header, `?key=`, HTTP Basic username), as two lambdas and
+  Doorkeeper's own `from_basic_authorization`.
+  `app/controllers/application_controller.rb:131-142` rewrites the API
+  branch of `find_current_user`. Tests:
+  `test/integration/api_test/personal_access_token_authentication_test.rb` (14 tests).
+- How the branch reads now: (1) a legacy key is looked up first and wins when it
+  matches; unlike 6.1.2, a non-matching value in the legacy transports no longer
+  short-circuits to 401 but falls through; (2) `Doorkeeper.authenticate(request)`
+  tries every configured transport in order and stops at the first non-blank value
+  (`oauth/token.rb:7-13`), hashes it and looks the row up; (3) an accessible token
+  loads the owner with `User.active.find_by_id`, and only then sets `oauth_scope`
+  when the token is not full access (`PersonalAccessToken.full_access?`) and
+  records the use (`track_use`, at most once a minute); an expired or revoked
+  token goes to `doorkeeper_render_error` (401 with a Bearer challenge); (4) the
+  Basic branch is unchanged. No ambiguity between the two key kinds: a PAT has
+  `_` and base64url characters, which `Token.find_token`'s `/\A[a-z0-9]+\z/i`
+  rejects, and a 40-hex legacy key hashes to nothing in `oauth_access_tokens`.
+- Why: D-010 (PAT = application-less Doorkeeper token with full access when
+  scopes are blank, so `User#admin?` and `allowed_to?` behave as with the legacy
+  key), D-012 (parity of transports with the legacy key), D-013 (last-used write
+  on the authentication path). `access_token_methods` is global, so
+  `GET /oauth/token/info` also accepts the new transports (C-4, accepted);
+  `POST /oauth/revoke` is unaffected (C-12).
+- Verified: 14 new integration tests green; whole `test/integration/api_test/`
+  directory green (371 runs); `account_controller_test`, `account_test`,
+  `sudo_mode_test` green; `zeitwerk:check` green. Live on the Docker server with a
+  freshly created admin token: Bearer, `X-Redmine-API-Key`, `?key=` and Basic
+  username all 200 on `/users/current.json`; `/users.json` (admin only) 200;
+  `api_key` present in the owner's `/users/current.json` (not authorized-by-OAuth);
+  unknown token 401 with `Basic realm="Redmine API"`; back-dated token 401 with
+  `Bearer realm="Redmine", error="invalid_token"`; `last_used_at` set after the
+  first request; `"key"=>"[FILTERED]"` in the log and no plaintext anywhere in it.
+  The locked-user guard was shown to matter (section 1.3.1 finding).
+- Known limits (all by decision, documented for the README): PATs bypass 2FA and
+  `must_change_password?` like the legacy key, including the Basic-username nuance
+  (D-021); expired/revoked and unknown tokens answer 401 with different
+  `WWW-Authenticate` challenges; a username/password Basic request costs one extra
+  hashed `find_by` that returns nil. Scoped tokens keep 6.1.2 behaviour: an
+  application token with `view_issues` gets 403 on the admin endpoint (tested).
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:
