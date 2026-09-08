@@ -251,7 +251,9 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
   `User#remove_references_before_destroy` (`user.rb:971-993`) does not delete
   Doorkeeper rows. Verified on PostgreSQL: destroying a user who has any access token
   raises `ActiveRecord::InvalidForeignKey`. Any design that stores PATs in this table
-  must delete them there (one line), which also fixes it for OAuth tokens.
+  must delete them there, which also fixes it for OAuth tokens. Fixed upstream as
+  #44343 (r24916, backported to 6.1-stable in r24939, released in 6.1.4); our branch
+  carries that fix as its first commit (section 2.1).
 - Doorkeeper's own endpoints and `access_token_methods`: `GET /oauth/token/info`
   resolves its token with `OAuth::Token.authenticate(request, *access_token_methods)`
   (`doorkeeper/rails/helpers.rb:72-76`), so any transport we add there applies to it
@@ -471,7 +473,45 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **nothing yet**.
+Status: **work breakdown step 1 of 7 done** (spec section 12). Steps 2-7 not started.
+
+### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
+
+- What: `User` gains two associations, `has_many :oauth_access_grants` and
+  `has_many :oauth_access_tokens`, both with `:dependent => :delete_all`
+  (`app/models/user.rb:105-108`). They are the upstream fix for Redmine #44343
+  ("Fix deleting a user who has authorized an OAuth2 application fails with
+  ActiveRecord::InvalidForeignKey", trunk r24916), backported to 6.1-stable in
+  r24939 and released in 6.1.4. The hunk is byte-identical to `6.1.4`
+  (`git diff 6.1.2 6.1.4 -- app/models/user.rb`); the resulting file blob is the
+  same as in 6.1.4. Test:
+  `test_destroy_should_delete_oauth_access_tokens_and_grants` (`test/unit/user_test.rb:403`),
+  ours, kept because it also covers an application-less token, the shape a PAT
+  will have (D-010). Upstream's two narrower tests are not copied.
+- How: `has_many ... :dependent => :delete_all` registers a `before_destroy`
+  callback that issues one SQL `DELETE` per association, without loading rows or
+  running their callbacks. It runs inside the destroy transaction, before the
+  `users` row is deleted, so the foreign keys
+  (`20250611092155_create_doorkeeper_tables.rb:31-35, 62-66`) are satisfied. Same
+  mechanism as the neighbouring `email_addresses` and `reactions` associations.
+- Why: a pre-existing 6.1.2 bug (section 1.3.1, "Pre-existing gap"): destroying a
+  user with any Doorkeeper token or grant raised `ActiveRecord::InvalidForeignKey`.
+  Storing PATs in `oauth_access_tokens` (D-010) would expose every PAT user to it.
+  Shipped as two commits: the model hunk alone, as a backport maintainers can
+  recognise, then our test and this note (D-015). The first implementation used two
+  `delete_all` lines inside `remove_references_before_destroy`; the reviewer (R-5,
+  recorded as D-024) pointed at the upstream fix, and taking it verbatim means the
+  branch converges with 6.1.4 instead of diverging on the same problem. Upstream's
+  own two tests (`6.1.4` `test/unit/user_test.rb:239-272`) are not copied (D-024).
+  Cascading foreign keys were rejected because Redmine does not use them.
+- Verified: the test was run once without the fix and failed with
+  `PG::ForeignKeyViolation` on `oauth_access_grants`; with the associations the
+  full `user_test.rb` is green (143 runs). Rows are deleted for both
+  application-less and application-bound tokens; the `Doorkeeper::Application`
+  row is kept (Redmine's schema gives applications no owner column).
+- Known limits: `test/system/oauth_provider_test.rb` cannot run in the Docker image
+  (no Chrome installed); noted for the reviewer. When the branch is later rebased
+  onto or merged with 6.1.4, this commit becomes a no-op rather than a conflict.
 
 For each component, once built: what it is, how it works, why it is shaped that way
 (reference `D-NNN`), known limits. Suggested subsections:
