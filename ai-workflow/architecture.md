@@ -494,7 +494,9 @@ Gem source read at `doorkeeper-5.8.2` (installed on the host via `bundle install
 
 ## 2. What we built
 
-Status: **work breakdown steps 1 to 6 of 7 done** (spec section 12). Step 7 (docs) not started.
+Status: **work breakdown steps 1 to 7 of 7 done** (spec section 12). Step 7 added `README.md`,
+`FINDINGS.md` and `ai-workflow/logs/` (export script and session map); the transcripts are copied
+in by `export.sh` before submission.
 
 ### 2.1 User deletion with OAuth tokens and grants (step 1, D-015, D-024, backport of r24916)
 
