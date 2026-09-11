@@ -30,6 +30,8 @@ if command -v uvx >/dev/null 2>&1; then
     uvx claude-code-log "$f" -o "$DEST/transcripts/$id.md" >/dev/null 2>&1 || echo "render failed: $id"
   done
   uvx claude-code-log "$DEST/sessions" -o "$DEST/transcripts/index.html" >/dev/null 2>&1 || echo "index render failed"
+  # claude-code-log writes its HTML next to the input; keep sessions/ to raw JSONL only.
+  mv "$DEST"/sessions/*.html "$DEST/transcripts/" 2>/dev/null || true
 else
   echo "uvx not found: JSONL copied, renderings skipped"
 fi
